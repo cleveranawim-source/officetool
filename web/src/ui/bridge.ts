@@ -32,6 +32,7 @@ export const server = {
   addPlanEvents: (calendarId: string, events: CalEvent[]) => call<number>('addPlanEvents', calendarId, events),
   loadState: () => call<string | null>('loadState'),
   saveState: (json: string) => call<void>('saveState', json),
+  fetchPublicIcs: (calendarId: string) => call<string>('fetchPublicIcs', calendarId),
   readTimetableSheet: (url: string) => call<string>('readTimetableSheet', url),
 };
 

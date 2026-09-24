@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { parseICS } from '../engine/ics';
+import { calendarIdFrom, parseICS } from '../engine/ics';
 import { importClassTimetable } from '../engine/importTimetable';
 import { WEEKDAYS } from '../engine/types';
 import { inAppsScript, server } from './bridge';
@@ -11,6 +11,7 @@ export function DataView({ m }: { m: Model }) {
   const s = m.p.settings;
   const [paste, setPaste] = useState('');
   const [sheetUrl, setSheetUrl] = useState('');
+  const [calInput, setCalInput] = useState(m.p.calendarId ?? '');
   const [msg, setMsg] = useState('');
   const [cals, setCals] = useState<{ id: string; name: string }[]>([]);
   const gas = inAppsScript();
@@ -43,20 +44,30 @@ export function DataView({ m }: { m: Model }) {
   const onIcs = async (e: Event) => {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (!f) return;
-    const events = parseICS(await f.text());
+    const events = parseICS(await f.text(), s.termEnd).filter((e) => e.end >= s.termStart && e.start <= s.termEnd);
     m.set({ events, eventSource: 'ics', applied: [], overrides: {} });
     setMsg(`${f.name}에서 일정 ${events.length}건을 읽었습니다.`);
   };
 
-  const fetchCalendar = async (id: string) => {
+  const fetchCalendar = async (raw: string) => {
+    const id = calendarIdFrom(raw);
+    if (!id) return;
+    setMsg('캘린더를 읽는 중…');
+    let events;
     try {
-      setMsg('캘린더를 읽는 중…');
-      const events = await server.getEvents(id, s.termStart, s.termEnd);
-      m.set({ events, eventSource: 'calendar', calendarId: id, eventsFetchedAt: new Date().toISOString(), applied: [] });
-      setMsg(`일정 ${events.length}건을 불러왔습니다.`);
+      events = await server.getEvents(id, s.termStart, s.termEnd);
     } catch (err) {
-      setMsg(`불러오지 못했습니다: ${(err as Error).message}`);
+      // 내 캘린더 목록으로 열 수 없는 공개 캘린더는 iCal 주소로 받는다
+      try {
+        events = parseICS(await server.fetchPublicIcs(id), s.termEnd).filter((e) => e.end >= s.termStart && e.start <= s.termEnd);
+      } catch {
+        setMsg(`불러오지 못했습니다: ${(err as Error).message}`);
+        return;
+      }
     }
+    m.set({ events, eventSource: 'calendar', calendarId: id, eventsFetchedAt: new Date().toISOString(), applied: [] });
+    setCalInput(id);
+    setMsg(`일정 ${events.length}건을 불러왔습니다.`);
   };
 
   const setSetting = (patch: Partial<typeof s>) => m.set({ settings: { ...s, ...patch }, applied: [] });
@@ -89,24 +100,35 @@ export function DataView({ m }: { m: Model }) {
             )}
             {m.p.eventSource === 'calendar' &&
               (gas ? (
-                <label class="field">
-                  학사일정 캘린더
-                  <select class="input" id="cal-select" value={m.p.calendarId ?? ''} onChange={(e) => fetchCalendar((e.target as HTMLSelectElement).value)}>
-                    <option value="" disabled>
-                      캘린더 선택
-                    </option>
-                    {cals.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  {m.p.calendarId && (
-                    <button class="btn" style={{ alignSelf: 'flex-start', marginTop: '6px' }} onClick={() => fetchCalendar(m.p.calendarId!)}>
-                      다시 불러오기
+                <div class="stack">
+                  <div class="row" style={{ alignItems: 'flex-end' }}>
+                    <label class="field" style={{ flex: 1 }}>
+                      캘린더 ID 또는 공유 주소
+                      <input class="input" id="cal-id" value={calInput} onInput={(e) => setCalInput((e.target as HTMLInputElement).value)} placeholder="c_…@group.calendar.google.com 또는 https://calendar.google.com/…" />
+                    </label>
+                    <button class="btn primary" onClick={() => fetchCalendar(calInput)} disabled={!calInput.trim()}>
+                      불러오기
                     </button>
+                  </div>
+                  {cals.length > 0 && (
+                    <label class="field">
+                      또는 내 캘린더에서 고르기
+                      <select class="input" id="cal-select" value="" onChange={(e) => fetchCalendar((e.target as HTMLSelectElement).value)}>
+                        <option value="" disabled>
+                          캘린더 선택
+                        </option>
+                        {cals.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   )}
-                </label>
+                  {m.p.eventsFetchedAt && (
+                    <span class="small muted">마지막으로 불러온 때: {new Date(m.p.eventsFetchedAt).toLocaleString('ko-KR')}</span>
+                  )}
+                </div>
               ) : (
                 <p class="small" style={{ margin: 0, color: 'var(--ink-2)' }}>
                   구글 캘린더 직접 연결은 학교 계정의 Apps Script 웹앱으로 열었을 때 켜집니다. 지금은 .ics 파일을 쓰세요.

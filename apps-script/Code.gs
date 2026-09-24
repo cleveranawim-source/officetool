@@ -28,8 +28,7 @@ function listCalendars() {
  * 종일 일정의 끝 날짜는 포함 날짜(inclusive)로 바꾼다.
  */
 function getEvents(calendarId, start, end) {
-  var cal = CalendarApp.getCalendarById(calendarId);
-  if (!cal) throw new Error('캘린더를 찾을 수 없습니다: ' + calendarId);
+  var cal = openCalendar_(calendarId);
   var from = new Date(start + 'T00:00:00+09:00');
   var to = new Date(end + 'T23:59:59+09:00');
   return cal.getEvents(from, to).map(function (e) {
@@ -56,8 +55,7 @@ function getEvents(calendarId, start, end) {
 
 /** 보완 제안(요일 교체 등)을 종일 일정으로 등록 */
 function addPlanEvents(calendarId, events) {
-  var cal = CalendarApp.getCalendarById(calendarId);
-  if (!cal) throw new Error('캘린더를 찾을 수 없습니다: ' + calendarId);
+  var cal = openCalendar_(calendarId);
   var n = 0;
   events.forEach(function (ev) {
     var day = new Date(ev.start + 'T00:00:00+09:00');
@@ -104,6 +102,30 @@ function loadState() {
   var out = '';
   for (var i = 0; i < n; i++) out += props.getProperty('state_' + i) || '';
   return out;
+}
+
+/**
+ * 캘린더 열기. 내 목록에 없는 공개 캘린더는 구독해서 연다.
+ */
+function openCalendar_(calendarId) {
+  var cal = CalendarApp.getCalendarById(calendarId);
+  if (!cal) {
+    try {
+      cal = CalendarApp.subscribeToCalendar(calendarId, { hidden: true });
+    } catch (e) {
+      cal = null;
+    }
+  }
+  if (!cal) throw new Error('캘린더를 열 수 없습니다. 캘린더 ID와 공유 설정을 확인하세요: ' + calendarId);
+  return cal;
+}
+
+/** 공개 캘린더의 iCal 원문 (캘린더를 열 수 없을 때 대체 경로) */
+function fetchPublicIcs(calendarId) {
+  var url = 'https://calendar.google.com/calendar/ical/' + encodeURIComponent(calendarId) + '/public/basic.ics';
+  var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('공개 iCal을 받지 못했습니다 (' + res.getResponseCode() + ')');
+  return res.getContentText();
 }
 
 function fmt_(d) {

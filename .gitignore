@@ -4,4 +4,3 @@ dist-private/
 web/data-private/
 *.log
 .DS_Store
-apps-script/index.html

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { classifyTitle, parseEvents } from './parseEvents';
 import { computeLedger, deliveredBefore, gradeSpreads } from './compute';
 import { importClassTimetable } from './importTimetable';
-import { parseICS } from './ics';
+import { calendarIdFrom, parseICS } from './ics';
 import { validateTimetable } from './validate';
 import { suggest } from './suggest';
 import { mergeHolidays } from './holidays';
@@ -204,8 +204,38 @@ describe('가져오기', () => {
       'END:VCALENDAR',
     ].join('\r\n');
     const ev = parseICS(ics);
-    expect(ev[0]).toMatchObject({ title: '2학년 수련회', start: '2026-11-11', end: '2026-11-13' });
-    expect(ev[1]).toMatchObject({ title: '진로교육 1-7', start: '2026-11-05' });
+    expect(ev.find((e) => e.title === '2학년 수련회')).toMatchObject({ start: '2026-11-11', end: '2026-11-13' });
+    expect(ev.find((e) => e.title === '진로교육 1-7')).toMatchObject({ start: '2026-11-05' });
+  });
+});
+
+describe('반복 일정과 캘린더 주소', () => {
+  it('매주 수요일 반복, 제외 날짜, 한 회차 이동', () => {
+    const ics = [
+      'BEGIN:VEVENT',
+      'UID:r1',
+      'DTSTART;VALUE=DATE:20260902',
+      'DTEND;VALUE=DATE:20260903',
+      'RRULE:FREQ=WEEKLY;UNTIL=20260930;BYDAY=WE',
+      'EXDATE;VALUE=DATE:20260916',
+      'SUMMARY:함께하는 삶1',
+      'END:VEVENT',
+      'BEGIN:VEVENT',
+      'UID:r1',
+      'RECURRENCE-ID;VALUE=DATE:20260923',
+      'DTSTART;VALUE=DATE:20260924',
+      'DTEND;VALUE=DATE:20260925',
+      'SUMMARY:함께하는 삶1',
+      'END:VEVENT',
+    ].join('\n');
+    expect(parseICS(ics).map((e) => e.start)).toEqual(['2026-09-02', '2026-09-09', '2026-09-24', '2026-09-30']);
+  });
+
+  it('임베드 주소에서 캘린더 ID', () => {
+    const id = 'c_abc123@group.calendar.google.com';
+    expect(calendarIdFrom(`https://calendar.google.com/calendar/embed?src=${encodeURIComponent(id)}&ctz=Asia%2FSeoul`)).toBe(id);
+    expect(calendarIdFrom(id)).toBe(id);
+    expect(calendarIdFrom(`https://calendar.google.com/calendar/ical/${encodeURIComponent(id)}/public/basic.ics`)).toBe(id);
   });
 });
 

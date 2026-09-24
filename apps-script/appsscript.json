@@ -4,10 +4,11 @@
   "runtimeVersion": "V8",
   "oauthScopes": [
     "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/spreadsheets.readonly"
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/script.external_request"
   ],
   "webapp": {
-    "executeAs": "USER_ACCESSING",
+    "executeAs": "USER_DEPLOYING",
     "access": "DOMAIN"
   }
 }

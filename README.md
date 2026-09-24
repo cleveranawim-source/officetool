@@ -31,14 +31,7 @@ npm run build      # dist/index.html 한 파일로 빌드
 
 ## 구글 Apps Script로 배포 (학교 계정)
 
-1. `cd web && npm run build:gas` → `apps-script/index.html`이 만들어집니다.
-2. [script.google.com](https://script.google.com)에서 새 프로젝트를 만들고
-   `Code.gs`, `index.html`(HTML 파일), `appsscript.json`(프로젝트 설정 → "appsscript.json 표시")을 붙여 넣습니다.
-   (`clasp`를 쓰면 `apps-script/` 폴더를 그대로 `clasp push` 하면 됩니다.)
-3. 배포 → 새 배포 → 웹 앱. 실행 사용자: **웹 앱에 액세스하는 사용자**, 액세스: **학교 도메인**.
-4. 웹앱 주소로 들어가 `데이터·설정`에서 학사일정 캘린더를 고르고 시간표 시트 주소를 넣습니다.
-
-각 선생님은 자기 계정 권한으로 캘린더를 읽고, 분류 수정·적용한 제안 같은 설정은 학교 공용으로 저장됩니다.
+단계별 안내: [`docs/02-deploy.md`](docs/02-deploy.md). 코드를 고친 뒤에는 `cd web && npm run build:gas`로 `apps-script/index.html`을 다시 만듭니다.
 
 ## 일정 제목 규칙
 
