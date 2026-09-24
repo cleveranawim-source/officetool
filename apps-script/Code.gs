@@ -1,0 +1,111 @@
+/**
+ * 시수핏 — Google Apps Script 웹앱
+ *
+ * 웹 화면(index.html)은 web/ 폴더에서 빌드한 단일 파일이다.
+ * 이 스크립트는 화면이 부르는 서버 함수만 제공한다.
+ *   - 학사일정 캘린더 읽기 / 보완 제안 일정 등록
+ *   - 시간표 시트 읽기
+ *   - 학교 공용 설정 저장 (스크립트 속성, 여러 선생님이 같은 설정을 봄)
+ */
+
+var TZ = 'Asia/Seoul';
+
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('index')
+    .setTitle('시수핏')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/** 접근 가능한 캘린더 목록 */
+function listCalendars() {
+  return CalendarApp.getAllCalendars().map(function (c) {
+    return { id: c.getId(), name: c.getName() };
+  });
+}
+
+/**
+ * 기간 안의 일정을 화면 형식으로 돌려준다.
+ * 종일 일정의 끝 날짜는 포함 날짜(inclusive)로 바꾼다.
+ */
+function getEvents(calendarId, start, end) {
+  var cal = CalendarApp.getCalendarById(calendarId);
+  if (!cal) throw new Error('캘린더를 찾을 수 없습니다: ' + calendarId);
+  var from = new Date(start + 'T00:00:00+09:00');
+  var to = new Date(end + 'T23:59:59+09:00');
+  return cal.getEvents(from, to).map(function (e) {
+    var s, t;
+    if (e.isAllDayEvent()) {
+      s = e.getAllDayStartDate();
+      t = new Date(e.getAllDayEndDate().getTime() - 24 * 3600 * 1000);
+    } else {
+      s = e.getStartTime();
+      t = e.getEndTime();
+    }
+    var sd = fmt_(s);
+    var ed = fmt_(t);
+    return {
+      id: e.getId() + '_' + sd,
+      title: e.getTitle(),
+      start: sd,
+      end: ed < sd ? sd : ed,
+      description: e.getDescription() || undefined,
+      source: 'calendar',
+    };
+  });
+}
+
+/** 보완 제안(요일 교체 등)을 종일 일정으로 등록 */
+function addPlanEvents(calendarId, events) {
+  var cal = CalendarApp.getCalendarById(calendarId);
+  if (!cal) throw new Error('캘린더를 찾을 수 없습니다: ' + calendarId);
+  var n = 0;
+  events.forEach(function (ev) {
+    var day = new Date(ev.start + 'T00:00:00+09:00');
+    var exists = cal.getEventsForDay(day).some(function (e) {
+      return e.getTitle() === ev.title;
+    });
+    if (!exists) {
+      cal.createAllDayEvent(ev.title, day, { description: '시수핏 보완 제안으로 추가' });
+      n++;
+    }
+  });
+  return n;
+}
+
+/** 시간표 시트(첫 번째 탭)를 탭 구분 텍스트로 */
+function readTimetableSheet(url) {
+  var sheet = SpreadsheetApp.openByUrl(url).getSheets()[0];
+  return sheet
+    .getDataRange()
+    .getDisplayValues()
+    .map(function (row) {
+      return row.join('\t');
+    })
+    .join('\n');
+}
+
+/* ---------- 공용 설정: 속성 값 하나가 9KB 제한이라 나눠 저장 ---------- */
+var CHUNK = 8000;
+
+function saveState(json) {
+  var props = PropertiesService.getScriptProperties();
+  var old = Number(props.getProperty('state_n') || 0);
+  var n = Math.ceil(json.length / CHUNK);
+  var data = { state_n: String(n) };
+  for (var i = 0; i < n; i++) data['state_' + i] = json.slice(i * CHUNK, (i + 1) * CHUNK);
+  props.setProperties(data);
+  for (var j = n; j < old; j++) props.deleteProperty('state_' + j);
+}
+
+function loadState() {
+  var props = PropertiesService.getScriptProperties();
+  var n = Number(props.getProperty('state_n') || 0);
+  if (!n) return null;
+  var out = '';
+  for (var i = 0; i < n; i++) out += props.getProperty('state_' + i) || '';
+  return out;
+}
+
+function fmt_(d) {
+  return Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+}
