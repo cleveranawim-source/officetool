@@ -42,6 +42,7 @@ jobs:
         working-directory: web/dist
         run: |
           touch .nojekyll
+          cp index.html 404.html
           git init -q -b gh-pages
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
