@@ -1,5 +1,8 @@
 name: 웹앱 배포 (GitHub Pages)
 
+# 테스트 → 빌드 → gh-pages 브랜치에 올리기.
+# GitHub Pages는 gh-pages 브랜치를 그대로 웹사이트로 보여 준다.
+
 on:
   push:
     branches: [main, claude/admiring-turing-cdqq7w]
@@ -7,20 +10,16 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
+  pages: read
 
 concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,21 +27,41 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
-      - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request'
-        with:
-          path: web/dist
+      - name: 설치
+        working-directory: web
+        run: npm ci
+      - name: 계산 엔진 테스트
+        working-directory: web
+        run: npm test
+      - name: 빌드
+        working-directory: web
+        run: npm run build
 
-  deploy:
-    if: github.event_name != 'pull_request'
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: gh-pages 브랜치에 올리기
+        if: github.event_name != 'pull_request'
+        working-directory: web/dist
+        run: |
+          touch .nojekyll
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "배포 ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
+
+      - name: 배포 상태 확인
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pages" --jq '"PAGES source=\(.source.branch) status=\(.status) url=\(.html_url)"'; then
+            url="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+            for i in $(seq 1 12); do
+              code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
+              echo "SITE $url -> $code"
+              [ "$code" = "200" ] && break
+              sleep 15
+            done
+          else
+            echo "PAGES_NOT_ENABLED: 저장소 Settings → Pages에서 Source를 'Deploy from a branch', 브랜치를 gh-pages로 선택하세요."
+          fi

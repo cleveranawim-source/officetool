@@ -203,7 +203,7 @@ function describeRule(e: ParsedEvent): string {
   const who = r.classes ? r.classes.join(', ') : r.grades ? `${r.grades.join('·')}학년` : '전교';
   const when = r.periods ? (r.periods.length === 1 ? `${r.periods[0]}교시` : `${r.periods[0]}~${r.periods[r.periods.length - 1]}교시`) : '';
   if (r.kind === 'dayswap') return `${who} ${WEEKDAYS[r.swapTo ?? 0]}요일 시간표`;
-  if (r.kind === 'periodswap') return `${who} ${r.swap?.[0]}교시↔${r.swap?.[1]}교시`;
+  if (r.kind === 'periodswap') return `${who} ${r.swap?.[0]}교시에 ${r.swap?.[1]}교시 수업`;
   if (r.kind === 'info') return '시수에 반영 안 함';
   return [who, when, KIND_LABEL[r.kind]].filter(Boolean).join(' ');
 }

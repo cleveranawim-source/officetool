@@ -339,7 +339,7 @@ function RulesEditor({ rules, custom, onSave, onReset }: { rules: RuleSet; custo
   return (
     <Panel
       title="일정 읽는 규칙"
-      hint="일정 이름에 이 낱말이 들어 있으면 그렇게 분류합니다. 교시는 이름 앞이나 뒤의 숫자로 읽습니다 (진로교육 1-7, 3감염병예방교육). 6(1)은 6교시와 1교시 교환."
+      hint="일정 이름에 이 낱말이 들어 있으면 그렇게 분류합니다. 교시는 이름 앞이나 뒤의 숫자로 읽습니다 (진로교육 1-7, 3감염병예방교육). 6(1)은 6교시에 1교시 수업을 하고 1교시는 행사에 씀."
       right={custom ? <span class="chip info">학교 규칙 사용 중</span> : <span class="chip plain">기본 규칙</span>}
     >
       <div class="stack">

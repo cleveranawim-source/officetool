@@ -91,7 +91,7 @@ export const KIND_LABEL: Record<EventKind, string> = {
   fullday: '전일 행사',
   periods: '교시 대체',
   dayswap: '요일 교체',
-  periodswap: '교시 교환',
+  periodswap: '교시 옮김',
   info: '참고(영향 없음)',
 };
 export function KindTag({ kind, text }: { kind: EventKind; text?: string }) {

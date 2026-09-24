@@ -124,7 +124,9 @@ export function splitTitle(title: string): string[] {
   const m = t.match(SWAP);
   if (!m) return [t];
   const token = `${m[1]}(${m[2]})`;
-  const rest = t.replace(m[0].slice(m[0].indexOf(m[1])), ' ').replace(/[/,]\s*$|^\s*[/,]/g, '').replace(/\s*\/\s*/g, ' ').trim();
+  let rest = t.replace(m[0].slice(m[0].indexOf(m[1])), ' ').replace(/[/,]\s*$|^\s*[/,]/g, '').replace(/\s*\/\s*/g, ' ').trim();
+  // "독서감상문쓰기대회6(5)": 이름만 있는 행사는 비게 되는 교시(5교시)에 들어간다
+  if (rest && !parsePeriods(cleanParens(rest).text)) rest = `${rest} ${m[2]}`;
   return rest ? [rest, token] : [token];
 }
 
@@ -136,7 +138,13 @@ export function classifyTitle(rawTitle: string, rules: RuleSet = DEFAULT_RULES):
   if (sw) {
     const a = +sw[1];
     const b = +sw[2];
-    return { kind: 'periodswap', swap: [a, b], label: `${a}·${b}교시 교환`, confidence: 'mid', reason: `"${base}"를 ${a}교시와 ${b}교시를 맞바꾸는 표기로 읽음` };
+    return {
+      kind: 'periodswap',
+      swap: [a, b],
+      label: `${a}교시에 ${b}교시 수업`,
+      confidence: 'high',
+      reason: `"${base}": ${b}교시 수업을 ${a}교시로 옮기고, ${b}교시는 그날 행사에 씀`,
+    };
   }
 
   const { text: noParen, removed } = cleanParens(base);
@@ -199,9 +207,26 @@ export function parseEvents(
     const parts = splitTitle(e.title);
     parts.forEach((part, i) => {
       const id = parts.length > 1 ? `${e.id}#${i}` : e.id;
+      const title = parts.length > 1 ? `${part} ← ${e.title}` : e.title;
       const rule = classifyTitle(part, rules);
       const o = overrides[id];
-      out.push({ ...e, id, title: parts.length > 1 ? `${part} ← ${e.title}` : e.title, rule: o ? { ...rule, ...o, confidence: 'high', reason: '직접 수정함' } : rule });
+      if (o) {
+        out.push({ ...e, id, title, rule: { ...rule, ...o, confidence: 'high', reason: '직접 수정함' } });
+        return;
+      }
+      // "영어듣기평가1-3(학년별)": 1학년 1교시, 2학년 2교시, 3학년 3교시
+      if (/학년\s*별/.test(part) && rule.periods && rule.periods.length > 1 && !rule.grades && !rule.classes) {
+        rule.periods.forEach((p, k) => {
+          out.push({
+            ...e,
+            id: `${id}@${k + 1}`,
+            title,
+            rule: { ...rule, periods: [p], grades: [k + 1], label: `${k + 1}학년 ${p}교시`, confidence: 'high', reason: `학년별로 한 교시씩: ${k + 1}학년은 ${p}교시` },
+          });
+        });
+        return;
+      }
+      out.push({ ...e, id, title, rule });
     });
   }
   return out;

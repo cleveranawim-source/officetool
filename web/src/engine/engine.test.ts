@@ -70,8 +70,19 @@ describe('일정 제목 분류', () => {
       { id: 'a', title: '사랑하는 삶1/6(1)', start: '2026-12-23', end: '2026-12-23', source: 'calendar' },
       { id: 'b', title: '독서감상문쓰기대회6(5)', start: '2026-12-16', end: '2026-12-16', source: 'calendar' },
     ]);
-    expect(ev.map((e) => e.rule.kind)).toEqual(['periods', 'periodswap', 'info', 'periodswap']);
+    expect(ev.map((e) => e.rule.kind)).toEqual(['periods', 'periodswap', 'periods', 'periodswap']);
     expect(ev[1].rule.swap).toEqual([6, 1]);
+    // 이름만 있는 행사는 비게 되는 교시(5교시)에 들어간다
+    expect(ev[2].rule.periods).toEqual([5]);
+  });
+
+  it('학년별로 한 교시씩', () => {
+    const ev = parseEvents([{ id: 'l', title: '영어듣기평가1-3(학년별)', start: '2026-10-14', end: '2026-10-14', source: 'calendar' }]);
+    expect(ev.map((e) => [e.rule.grades, e.rule.periods])).toEqual([
+      [[1], [1]],
+      [[2], [2]],
+      [[3], [3]],
+    ]);
   });
 
   it('요일 교체', () => {
