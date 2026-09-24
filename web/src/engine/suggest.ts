@@ -1,4 +1,4 @@
-import { appliesTo, isMovable } from './parseEvents';
+import { appliesTo, DEFAULT_RULES, isMovable, type RuleSet } from './parseEvents';
 import { fmtShort } from './dates';
 import { classDay, deliveredBefore, type Ledger } from './compute';
 import { isAcademic } from './subjects';
@@ -151,7 +151,7 @@ interface Candidate {
   newPeriods?: number[];
 }
 
-function candidates(l: Ledger): Candidate[] {
+function candidates(l: Ledger, rules: RuleSet): Candidate[] {
   const out: Candidate[] = [];
   const today = l.settings.today;
   for (const day of l.days) {
@@ -192,7 +192,7 @@ function candidates(l: Ledger): Candidate[] {
 
     // 2) 하루짜리 부분 교시 일정: 다른 교시로 옮기기
     for (const e of active) {
-      if (e.rule.kind !== 'periods' || e.start !== e.end || !e.rule.periods || !isMovable(e.title.split(' ← ')[0])) continue;
+      if (e.rule.kind !== 'periods' || e.start !== e.end || !e.rule.periods || !isMovable(e.title.split(' ← ')[0], rules)) continue;
       const len = e.rule.periods.length;
       const nPeriods = Math.max(...l.classes.map((c) => c.week[day.weekday].length));
       if (len >= nPeriods) continue;
@@ -218,10 +218,10 @@ function candidates(l: Ledger): Candidate[] {
   return out;
 }
 
-export function suggest(l: Ledger, limit = 4): { base: Metrics; list: Suggestion[]; final: Metrics } {
+export function suggest(l: Ledger, limit = 4, rules: RuleSet = DEFAULT_RULES): { base: Metrics; list: Suggestion[]; final: Metrics } {
   const st = buildState(l);
   const base = metrics(st);
-  const pool = candidates(l);
+  const pool = candidates(l, rules);
   const list: Suggestion[] = [];
   const usedDates = new Set<string>();
   let current = base;

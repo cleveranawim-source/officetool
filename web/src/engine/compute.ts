@@ -216,7 +216,7 @@ export function classDay(c: ClassTimetable, wd: number, mine: ParsedEvent[], set
     const ev =
       full ??
       mine.find((e) => e.rule.kind === 'exam' && !settings.examCountsAsClass && (!e.rule.periods || e.rule.periods.includes(p))) ??
-      mine.find((e) => e.rule.kind === 'periods' && e.rule.periods!.includes(p));
+      mine.find((e) => e.rule.kind === 'periods' && (e.rule.periods ?? []).includes(p));
     if (ev) {
       lost.push({ period: p, slot, event: ev });
       return;

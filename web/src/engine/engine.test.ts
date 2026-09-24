@@ -6,6 +6,8 @@ import { calendarIdFrom, parseICS } from './ics';
 import { validateTimetable } from './validate';
 import { suggest } from './suggest';
 import { mergeHolidays } from './holidays';
+import { anonymizeTeachers } from './privacy';
+import { parseEventList } from './eventList';
 import type { CalEvent, Settings, Timetable } from './types';
 import sample from '../data/sample-timetable.json';
 import { sampleEvents } from '../data/sampleEvents';
@@ -250,8 +252,8 @@ describe('가져오기', () => {
     '전체 학반 시간표,,,,,,,,,,,',
     '학반,월,,화,,수,,목,,금,,학반,담임',
     ',1,2,1,2,1,2,1,2,1,2,,',
-    '1-1,국어,미술,─▷,수학,영A,창체,국어,수학,영B,국어,1-1,홍길',
-    ',가가,나나,,다다,라라,,가가,다다,마마,가가,,',
+    '1-1,미술,─▷,국어,수학,영A,창체,국어,수학,영B,국어,1-1,홍길',
+    ',나나,,가가,다다,라라,,가가,다다,마마,가가,,',
     '1-2,수학,국어,영A,영B,국어,창체,미술,─▷,수학,국어,1-2,김철',
     ',다다,가가,라라,마마,가가,,나나,,다다,가가,,',
   ].join('\n');
@@ -261,9 +263,45 @@ describe('가져오기', () => {
     expect(timetable.days).toEqual([2, 2, 2, 2, 2]);
     expect(timetable.classes).toHaveLength(2);
     expect(timetable.classes[0].homeroom).toBe('홍길');
-    // 화1 "─▷"는 앞 칸(월2 미술)을 이어받는다
-    expect(timetable.classes[0].week[1][0]).toEqual({ s: '미술', t: '나나' });
+    // 월2 "─▷"는 같은 날 앞 교시(월1 미술)를 이어받는다
+    expect(timetable.classes[0].week[0][1]).toEqual({ s: '미술', t: '나나' });
     expect(timetable.classes[1].week[3][1]).toEqual({ s: '미술', t: '나나' });
+  });
+
+  it('학반별 블록형 시간표 (세로 블록 표시 │ ▽)', () => {
+    const text = [
+      '학반 시간표,,,,,',
+      '2026 학년도,,,1-2 홍길동,,',
+      ',월,화,수,목,금',
+      '1,국어,미술,수학,영어,과학',
+      ',가가,나나,다다,라라,마마',
+      '2,수학,│,창체,국어,수학',
+      ',다다,▽,,가가,다다',
+      '3,,영어,,수학,',
+      ',,라라,,다다,',
+      ',,,,,',
+      '학반 시간표,,,,,',
+      '2026 학년도,,,1-1 김철수,,',
+      ',월,화,수,목,금',
+      '1,과학,국어,국어,수학,영어',
+      ',마마,가가,가가,다다,라라',
+      '2,영어,수학,창체,과학,국어',
+      ',라라,다다,,마마,가가',
+    ].join('\n');
+    const r = importClassTimetable(text);
+    expect(r.layout).toBe('blocks');
+    expect(r.timetable.classes.map((c) => c.id)).toEqual(['1-1', '1-2']);
+    const c12 = r.timetable.classes[1];
+    expect(c12.homeroom).toBe('홍길동');
+    expect(c12.week[1]).toEqual([{ s: '미술', t: '나나' }, { s: '미술', t: '나나' }, { s: '영어', t: '라라' }]);
+    expect(c12.week[0]).toHaveLength(2); // 월 3교시 빈칸은 잘라냄
+    expect(r.timetable.days).toEqual([2, 3, 2, 3, 2]);
+  });
+
+  it('한 칸에 과목과 교사가 같이 있는 시간표', () => {
+    const text = ['학반,월,,화,,수,,목,,금,', ',1,2,1,2,1,2,1,2,1,2', '1-1,"국어\n김가",수학(이나),영어,,창체,,,,,'].join('\n');
+    const c = importClassTimetable(text).timetable.classes[0];
+    expect(c.week[0]).toEqual([{ s: '국어', t: '김가' }, { s: '수학', t: '이나' }]);
   });
 
   it('구글 캘린더 ics', () => {
@@ -315,6 +353,26 @@ describe('반복 일정과 캘린더 주소', () => {
     expect(calendarIdFrom(`https://calendar.google.com/calendar/embed?src=${encodeURIComponent(id)}&ctz=Asia%2FSeoul`)).toBe(id);
     expect(calendarIdFrom(id)).toBe(id);
     expect(calendarIdFrom(`https://calendar.google.com/calendar/ical/${encodeURIComponent(id)}/public/basic.ics`)).toBe(id);
+  });
+});
+
+describe('개인정보와 목록형 일정', () => {
+  it('교사 이름을 교과 번호로 바꾼다', () => {
+    const a = anonymizeTeachers(tiny);
+    const names = new Set(a.classes.flatMap((c) => c.week.flat().map((s) => s.t)).filter(Boolean));
+    expect([...names].sort()).toEqual(['국어1', '수학1', '영어1']);
+    expect(computeLedger(a, [], settings).teachers).toHaveLength(3);
+  });
+
+  it('날짜와 일정 이름 목록', () => {
+    const text = ['날짜\t요일\t행사', '2026-10-07\t수\t(1,2학년) 중간고사', '10/13~15\t\t2학년 수련회', '2026. 11. 5.\t목\t진로교육 1-7', '11월 20일 재량휴업일'].join('\n');
+    const ev = parseEventList(text, 2026);
+    expect(ev.map((e) => [e.start, e.end, e.title])).toEqual([
+      ['2026-10-07', '2026-10-07', '(1,2학년) 중간고사'],
+      ['2026-10-13', '2026-10-15', '2학년 수련회'],
+      ['2026-11-05', '2026-11-05', '진로교육 1-7'],
+      ['2026-11-20', '2026-11-20', '재량휴업일'],
+    ]);
   });
 });
 

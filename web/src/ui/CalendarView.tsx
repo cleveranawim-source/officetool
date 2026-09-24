@@ -33,7 +33,7 @@ export function CalendarView({ m }: { m: Model }) {
 
   const events = [...m.events]
     .filter((e) => e.end >= l.settings.termStart && e.start <= l.settings.termEnd)
-    .filter((e) => filter === 'all' || e.rule.confidence !== 'high')
+    .filter((e) => filter === 'all' || e.rule.confidence === 'low')
     .sort((a, b) => a.start.localeCompare(b.start));
 
   const setKind = (e: ParsedEvent, kind: EventKind) => {

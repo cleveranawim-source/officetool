@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
 import { defaultEventsLabel, eventsAreSample } from '@events';
 import { calendarIdFrom, parseICS } from '../engine/ics';
+import { parseEventList } from '../engine/eventList';
+import { DEFAULT_RULES, type RuleSet } from '../engine/parseEvents';
+import { download, readTimetableFile } from './files';
 import { importClassTimetable } from '../engine/importTimetable';
 import { WEEKDAYS } from '../engine/types';
 import { inAppsScript, server } from './bridge';
@@ -13,6 +16,7 @@ export function DataView({ m }: { m: Model }) {
   const [paste, setPaste] = useState('');
   const [sheetUrl, setSheetUrl] = useState('');
   const [calInput, setCalInput] = useState(m.p.calendarId ?? '');
+  const [listText, setListText] = useState('');
   const [msg, setMsg] = useState('');
   const [cals, setCals] = useState<{ id: string; name: string }[]>([]);
   const gas = inAppsScript();
@@ -99,6 +103,26 @@ export function DataView({ m }: { m: Model }) {
                 <input class="input" type="file" id="ics-file" accept=".ics,text/calendar" onChange={onIcs} />
               </label>
             )}
+            {m.p.eventSource === 'ics' && (
+              <details>
+                <summary>또는 시트의 일정 목록 붙여넣기 (날짜 + 일정 이름)</summary>
+                <div class="stack" style={{ marginTop: '8px' }}>
+                  <textarea class="input" id="list-paste" rows={4} value={listText} onInput={(e) => setListText((e.target as HTMLTextAreaElement).value)} placeholder={'2026-10-07\t(1,2학년) 중간고사\n11/5\t진로교육 1-7'} />
+                  <button
+                    class="btn"
+                    style={{ alignSelf: 'flex-start' }}
+                    disabled={!listText.trim()}
+                    onClick={() => {
+                      const ev = parseEventList(listText, Number(s.termStart.slice(0, 4))).filter((e) => e.end >= s.termStart && e.start <= s.termEnd);
+                      m.set({ events: ev, eventSource: 'ics', applied: [], overrides: {} });
+                      setMsg(`목록에서 일정 ${ev.length}건을 읽었습니다.`);
+                    }}
+                  >
+                    목록 읽기
+                  </button>
+                </div>
+              </details>
+            )}
             {m.p.eventSource === 'calendar' &&
               (gas ? (
                 <div class="stack">
@@ -141,6 +165,26 @@ export function DataView({ m }: { m: Model }) {
 
         <Panel title="시간표" hint={`${tt.school} · ${tt.term} · ${tt.classes.length}개 반 · ${tt.days.map((n, i) => `${WEEKDAYS[i]}${n}`).join(' ')}교시`}>
           <div class="stack">
+            <label class="field">
+              시간표 엑셀 파일 올리기 (.xlsx, .csv)
+              <input
+                class="input"
+                type="file"
+                id="tt-file-data"
+                accept=".xlsx,.csv,.tsv,.txt"
+                onChange={async (e) => {
+                  const f = (e.target as HTMLInputElement).files?.[0];
+                  if (!f) return;
+                  try {
+                    const r = await readTimetableFile(f, tt.school, tt.term);
+                    m.set({ timetable: r.timetable, applied: [] });
+                    setMsg(`${r.timetable.classes.length}개 반 시간표를 읽었습니다.`);
+                  } catch (err) {
+                    setMsg((err as Error).message);
+                  }
+                }}
+              />
+            </label>
             {gas && (
               <div class="row" style={{ alignItems: 'flex-end' }}>
                 <label class="field" style={{ flex: 1 }}>
@@ -171,6 +215,49 @@ export function DataView({ m }: { m: Model }) {
       </div>
 
       <div class="stack">
+        <Panel title="학교 설정 파일" hint="시간표·학사일정·분류 수정·규칙을 파일 하나로 저장합니다. 같은 학교 선생님께 파일을 주면 같은 화면을 봅니다.">
+          <div class="row">
+            <button
+              class="btn primary"
+              onClick={() => {
+                const st: Partial<typeof s> = { ...m.p.settings };
+                delete st.today;
+                const name = (m.p.school?.name || tt.school || '학교').replace(/\s+/g, '');
+                download(`시수핏-${name}-${tt.term.replace(/\s+/g, '')}.json`, JSON.stringify({ app: 'sisufit', version: 1, ...m.p, settings: st }, null, 1));
+              }}
+            >
+              설정 파일 저장
+            </button>
+            <label class="btn">
+              설정 파일 불러오기
+              <input
+                type="file"
+                id="state-file"
+                accept=".json,application/json"
+                hidden
+                onChange={async (e) => {
+                  const f = (e.target as HTMLInputElement).files?.[0];
+                  if (!f) return;
+                  try {
+                    const data = JSON.parse(await f.text());
+                    if (data.app !== 'sisufit') throw new Error('시수핏 설정 파일이 아닙니다.');
+                    delete data.app;
+                    delete data.version;
+                    const rest = data;
+                    m.set({ ...rest, settings: { ...s, ...rest.settings, today: s.today }, setupDone: true });
+                    setMsg(`${f.name}을 불러왔습니다.`);
+                  } catch (err) {
+                    setMsg(`불러오지 못했습니다: ${(err as Error).message}`);
+                  }
+                }}
+              />
+            </label>
+            <button class="btn ghost" onClick={m.restartSetup}>
+              처음부터 다시 설정
+            </button>
+          </div>
+        </Panel>
+
         <Panel title="계산 기준">
           <div class="stack">
             <div class="row" style={{ alignItems: 'flex-end' }}>
@@ -218,49 +305,72 @@ export function DataView({ m }: { m: Model }) {
           )}
         </Panel>
 
-        <Panel title="이 화면의 규칙" hint="캘린더 일정 제목을 이렇게 읽습니다.">
-          <table class="t">
-            <tbody>
-              <tr>
-                <td>
-                  <code class="inline">진로교육 1-7</code>
-                </td>
-                <td>1~7교시를 진로교육으로 대체</td>
-              </tr>
-              <tr>
-                <td>
-                  <code class="inline">함께하는 삶1</code>
-                </td>
-                <td>1교시 특별교육</td>
-              </tr>
-              <tr>
-                <td>
-                  <code class="inline">2학년 수련회</code>
-                </td>
-                <td>2학년 전 교시 행사</td>
-              </tr>
-              <tr>
-                <td>
-                  <code class="inline">목요일 시간표 운영</code>
-                </td>
-                <td>그날 목요일 시간표로 수업</td>
-              </tr>
-              <tr>
-                <td>
-                  <code class="inline">재량휴업일</code>, 공휴일
-                </td>
-                <td>수업 없음 (공휴일은 자동으로 더함)</td>
-              </tr>
-              <tr>
-                <td>
-                  <code class="inline">2학기 중간고사</code>
-                </td>
-                <td>시험 기간 · 체크포인트</td>
-              </tr>
-            </tbody>
-          </table>
-        </Panel>
+        <RulesEditor rules={m.rules} custom={!!m.p.rules} onSave={(r) => m.set({ rules: r, applied: [] })} onReset={() => m.set({ rules: undefined, applied: [] })} />
       </div>
     </div>
+  );
+}
+
+const RULE_FIELDS: { key: keyof RuleSet; label: string; hint: string }[] = [
+  { key: 'staff', label: '학생 수업과 무관한 일정', hint: '교직원 회의·연수, 학부모 행사 등. 교시 표기가 있어도 무시' },
+  { key: 'holiday', label: '휴업일', hint: '그날 수업이 없음' },
+  { key: 'exam', label: '정기고사', hint: '시험 전 진도 비교의 기준점' },
+  { key: 'fullday', label: '전일 행사', hint: '교시 표기가 없으면 하루 전체 대체' },
+  { key: 'info', label: '참고 일정', hint: '교시 표기가 없으면 수업에 영향 없음' },
+  { key: 'fixed', label: '옮길 수 없는 일정', hint: '보완 제안에서 교시를 옮기지 않음' },
+];
+
+function RulesEditor({ rules, custom, onSave, onReset }: { rules: RuleSet; custom: boolean; onSave: (r: RuleSet) => void; onReset: () => void }) {
+  const toText = (r: RuleSet) => Object.fromEntries(RULE_FIELDS.map((f) => [f.key, r[f.key].join(', ')])) as Record<keyof RuleSet, string>;
+  const [draft, setDraft] = useState(toText(rules));
+  const dirty = RULE_FIELDS.some((f) => draft[f.key] !== toText(rules)[f.key]);
+  const save = () =>
+    onSave(
+      Object.fromEntries(
+        RULE_FIELDS.map((f) => [
+          f.key,
+          draft[f.key]
+            .split(/[,\n]/)
+            .map((w) => w.trim())
+            .filter(Boolean),
+        ]),
+      ) as unknown as RuleSet,
+    );
+  return (
+    <Panel
+      title="일정 읽는 규칙"
+      hint="일정 이름에 이 낱말이 들어 있으면 그렇게 분류합니다. 교시는 이름 앞이나 뒤의 숫자로 읽습니다 (진로교육 1-7, 3감염병예방교육). 6(1)은 6교시와 1교시 교환."
+      right={custom ? <span class="chip info">학교 규칙 사용 중</span> : <span class="chip plain">기본 규칙</span>}
+    >
+      <div class="stack">
+        <div class="rules-grid">
+          {RULE_FIELDS.map((f) => (
+            <label class="field" key={f.key}>
+              {f.label}
+              <textarea class="input" id={`rule-${f.key}`} rows={3} value={draft[f.key]} onInput={(e) => setDraft({ ...draft, [f.key]: (e.target as HTMLTextAreaElement).value })} />
+              <span class="small muted" style={{ fontWeight: 400 }}>
+                {f.hint}
+              </span>
+            </label>
+          ))}
+        </div>
+        <div class="row">
+          <button class="btn primary" disabled={!dirty} onClick={save}>
+            규칙 저장
+          </button>
+          {custom && (
+            <button
+              class="btn ghost"
+              onClick={() => {
+                setDraft(toText(DEFAULT_RULES));
+                onReset();
+              }}
+            >
+              기본 규칙으로
+            </button>
+          )}
+        </div>
+      </div>
+    </Panel>
   );
 }

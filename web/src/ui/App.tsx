@@ -6,6 +6,7 @@ import { CellDrawer } from './CellDrawer';
 import { DataView } from './DataView';
 import { BrandMark, Icon, TipProvider } from './parts';
 import { useModel } from './store';
+import { Setup } from './Setup';
 import { SuggestView } from './SuggestView';
 import { Dashboard, Exams, MatrixPanel, Teachers, type Pick } from './views';
 
@@ -45,12 +46,14 @@ export function App() {
     window.scrollTo(0, 0);
   };
 
+  if (!m.p.setupDone) return <Setup m={m} />;
+
   const v = VIEWS.find((x) => x.id === view)!;
   const l = m.ledger;
   const lowConf = m.events.filter((e) => e.rule.confidence === 'low').length;
   const errors = m.issues.filter((i) => i.level === 'error').length;
   const sampleEv = m.p.eventSource === 'sample' && eventsAreSample;
-  const srcLabel = m.p.eventSource === 'sample' ? defaultEventsLabel : m.p.eventSource === 'ics' ? '.ics 파일' : '구글 캘린더';
+  const srcLabel = m.p.eventSource === 'sample' ? defaultEventsLabel : m.p.eventSource === 'ics' ? '학사일정 파일' : '구글 캘린더';
 
   return (
     <TipProvider>
@@ -106,16 +109,13 @@ export function App() {
           </header>
 
           {(sampleEv || m.sampleTimetable) && (
-            <div class="banner" role="note">
+            <div class="banner" role="note" style={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
               <span>
-                <b>예시 데이터</b>{' '}
-                {m.sampleTimetable ? '시간표는 익명화한 예시이고, ' : ''}
-                {sampleEv ? '학사일정은 공휴일만 실제이고 행사는 가상입니다. ' : ''}
-                <a href="#data" onClick={(e) => (e.preventDefault(), go('data'))} style={{ color: 'inherit', fontWeight: 600 }}>
-                  데이터·설정
-                </a>
-                에서 학교 캘린더를 연결하세요.
+                <b>예시 학교입니다.</b> 시간표는 실제 중학교 시간표를 익명화한 것이고, 학사일정은 공휴일만 실제입니다.
               </span>
+              <button class="btn primary" onClick={m.restartSetup}>
+                우리 학교로 시작하기
+              </button>
             </div>
           )}
 
