@@ -29,7 +29,7 @@ function todayISO(): string {
 
 const DEFAULTS: Persisted = {
   settings: {
-    termStart: '2026-08-17',
+    termStart: '2026-08-18',
     termEnd: '2026-12-31',
     targetWeeks: 17,
     examCountsAsClass: false,
