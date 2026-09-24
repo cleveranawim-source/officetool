@@ -33,6 +33,45 @@ describe('일정 제목 분류', () => {
     expect(r.grades).toEqual(grades);
   });
 
+  it.each([
+    // 실제 학교 캘린더에서 쓰이는 표기
+    ['3감염병예방교육', 'periods', [3], undefined],
+    ['1-7 백마페스티벌', 'periods', [1, 2, 3, 4, 5, 6, 7], undefined],
+    ['5-6 동아리 활동', 'periods', [5, 6], undefined],
+    ['1-4 1학년 봄날 관람', 'periods', [1, 2, 3, 4], [1]],
+    ['2 학교폭력예방교육, 안전교육', 'periods', [2], undefined],
+    ['1개학식', 'periods', [1], undefined],
+    ['크리스마스 페스티벌2-4', 'periods', [2, 3, 4], undefined],
+    ['(3학년)졸업식1-4', 'periods', [1, 2, 3, 4], [3]],
+    ['학급자치6(담)', 'periods', [6], undefined],
+    ['(1,2학년) 중간고사', 'exam', undefined, [1, 2]],
+    ['(2학년) 역사탐방', 'fullday', undefined, [2]],
+    ['부장회의1', 'info', undefined, undefined],
+    ['1부장회의', 'info', undefined, undefined],
+    ['✝️교직원예배', 'info', undefined, undefined],
+    ['2학기 임원수련회', 'info', undefined, undefined],
+    ['학급자치(08:30~09:10)', 'info', undefined, undefined],
+    ['오전 10:30 새학기 준비기도회', 'info', undefined, undefined],
+    ['보호자 상담주간(24-28)', 'info', undefined, undefined],
+    ['3학년 학급문집 제출마감일', 'info', undefined, [3]],
+    ['1,2학년 학급 문집 제출 마감일', 'info', undefined, [1, 2]],
+    ['6(1)', 'periodswap', undefined, undefined],
+  ] as const)('실제 표기 %s', (title, kind, periods, grades) => {
+    const r = classifyTitle(title);
+    expect(r.kind).toBe(kind);
+    expect(r.periods).toEqual(periods);
+    expect(r.grades).toEqual(grades);
+  });
+
+  it('한 제목에 교시 교환이 함께 있으면 나눈다', () => {
+    const ev = parseEvents([
+      { id: 'a', title: '사랑하는 삶1/6(1)', start: '2026-12-23', end: '2026-12-23', source: 'calendar' },
+      { id: 'b', title: '독서감상문쓰기대회6(5)', start: '2026-12-16', end: '2026-12-16', source: 'calendar' },
+    ]);
+    expect(ev.map((e) => e.rule.kind)).toEqual(['periods', 'periodswap', 'info', 'periodswap']);
+    expect(ev[1].rule.swap).toEqual([6, 1]);
+  });
+
   it('요일 교체', () => {
     const r = classifyTitle('월요일 시간표 운영');
     expect(r.kind).toBe('dayswap');
@@ -40,7 +79,7 @@ describe('일정 제목 분류', () => {
   });
 
   it('모르는 제목은 확인 필요로 표시', () => {
-    const r = classifyTitle('교직원 워크숍');
+    const r = classifyTitle('북적북적나들이');
     expect(r.kind).toBe('info');
     expect(r.confidence).toBe('low');
   });
@@ -129,6 +168,29 @@ describe('시수 계산', () => {
     expect(l.swaps).toHaveLength(2);
   });
 
+  it('교시 교환 뒤 교시 일정: 1교시 행사가 6교시 과목을 잡아먹는다', () => {
+    // 1-1 수(9/9): 1교시 수학, 2교시 창체. "2(1)" + "행사1" → 1교시 자리에 창체가 오고 행사가 창체를 대체
+    const l = ledger([
+      { id: 'x', title: '감사하는 삶1', start: '2026-09-09', end: '2026-09-09', source: 'manual' },
+      { id: 'y', title: '2(1)', start: '2026-09-09', end: '2026-09-09', source: 'manual' },
+    ]);
+    expect(l.delivered['1-1'].수학).toBe(6);
+    expect(l.delivered['1-1'].창체).toBe(1);
+  });
+
+  it('학년마다 다른 시험 날짜는 따로 체크포인트', () => {
+    const l = ledger([
+      { id: 'e1', title: '(1학년) 중간고사', start: '2026-09-16', end: '2026-09-16', source: 'manual' },
+      { id: 'e2', title: '(2학년) 중간고사', start: '2026-09-17', end: '2026-09-17', source: 'manual' },
+    ]);
+    expect(l.checkpoints.map((c) => [c.date, c.grades])).toEqual([
+      ['2026-09-16', [1]],
+      ['2026-09-17', [2]],
+      ['9999-12-31', undefined],
+    ]);
+    expect(gradeSpreads(l, l.checkpoints[1])).toHaveLength(0); // 1학년만 있는 시간표
+  });
+
   it('시험 인정 설정', () => {
     const ev: CalEvent[] = [{ id: 'e', title: '중간고사', start: '2026-09-07', end: '2026-09-07', source: 'manual' }];
     expect(computeLedger(tiny, parseEvents(ev), settings).delivered['1-1'].국어).toBe(5);
@@ -163,6 +225,23 @@ describe('보완 제안', () => {
         .flatMap(([c, w]) => Object.entries(w).filter(([s]) => s !== '창체').map(([s, n]) => Math.max(0, n * 2 - applied.delivered[c][s])))
         .reduce((a, b) => a + b, 0),
     );
+  });
+});
+
+describe('교시 이동 제안의 제약', () => {
+  const events: CalEvent[] = [
+    { id: 'h', title: '재량휴업일', start: '2026-09-07', end: '2026-09-07', source: 'manual' },
+    { id: 'a', title: '성교육1', start: '2026-09-15', end: '2026-09-15', source: 'manual' },
+    { id: 'b', title: '안전교육2', start: '2026-09-15', end: '2026-09-15', source: 'manual' },
+    { id: 'c', title: '영어듣기평가1', start: '2026-09-16', end: '2026-09-16', source: 'manual' },
+  ];
+  const l = ledger(events);
+  const moves = suggest(l, 10).list.filter((x) => x.type === 'move');
+  it('다른 일정과 겹치는 교시로는 옮기지 않는다', () => {
+    expect(moves.every((m) => !(m.override?.eventId === 'a' && m.override.rule.periods?.includes(2)))).toBe(true);
+  });
+  it('듣기평가처럼 정해진 일정은 옮기지 않는다', () => {
+    expect(moves.some((m) => m.override?.eventId === 'c')).toBe(false);
   });
 });
 

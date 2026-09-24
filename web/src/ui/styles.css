@@ -40,6 +40,7 @@
   --k-fullday: #d0701d;
   --k-periods: #1d6a53;
   --k-dayswap: #2a6fc4;
+  --k-periodswap: #5a8fa3;
   --k-info: #b5bfba;
 
   --shadow: 0 1px 2px rgba(20, 32, 27, 0.06), 0 4px 16px rgba(20, 32, 27, 0.06);
@@ -87,6 +88,8 @@
     --k-fullday: #e8964d;
     --k-periods: #4dbd95;
     --k-dayswap: #74a9ee;
+  --k-periodswap: #7fb3c6;
+    --k-periodswap: #7fb3c6;
     --k-info: #4a5752;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.25);
   }
@@ -129,6 +132,7 @@
   --k-fullday: #e8964d;
   --k-periods: #4dbd95;
   --k-dayswap: #74a9ee;
+  --k-periodswap: #7fb3c6;
   --k-info: #4a5752;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.25);
 }

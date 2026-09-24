@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'preact/hooks';
-import { gradeSpreads, target, type Ledger } from '../engine/compute';
+import { cpApplies, gradeSpreads, target, type Ledger } from '../engine/compute';
 import { diffDays, fmtShort, weekdayIndex } from '../engine/dates';
 import { isAcademic } from '../engine/subjects';
 import type { Checkpoint } from '../engine/types';
@@ -10,9 +10,13 @@ import { divergingColor, inkOn, lagColor, Panel, Seg, signed, useTip } from './p
 export type Pick = { cls: string; subject: string } | null;
 export type Go = (view: string) => void;
 
-export function nextCheckpoint(l: Ledger): Checkpoint {
-  const cps = l.checkpoints;
+export function nextCheckpoint(l: Ledger, grade?: number): Checkpoint {
+  const cps = grade === undefined ? l.checkpoints : checkpointsFor(l, grade);
   return cps.find((c) => c.date > l.settings.today) ?? cps[cps.length - 1];
+}
+
+export function checkpointsFor(l: Ledger, grade: number): Checkpoint[] {
+  return l.checkpoints.filter((c) => cpApplies(c, grade));
 }
 
 function grades(l: Ledger): number[] {
@@ -148,8 +152,9 @@ function HeatLegend({ mode }: { mode: Mode }) {
 export function MatrixPanel({ l, pick, onPick, initialMode = 'lag' }: { l: Ledger; pick: Pick; onPick: (p: Pick) => void; initialMode?: Mode }) {
   const [grade, setGrade] = useState(grades(l)[0]);
   const [mode, setMode] = useState<Mode>(initialMode);
-  const [cpId, setCpId] = useState(nextCheckpoint(l).id);
-  const cp = l.checkpoints.find((c) => c.id === cpId) ?? nextCheckpoint(l);
+  const [cpId, setCpId] = useState<string | null>(null);
+  const cps = checkpointsFor(l, grade);
+  const cp = cps.find((c) => c.id === cpId) ?? nextCheckpoint(l, grade);
   return (
     <Panel
       title="반 × 과목 시수"
@@ -172,7 +177,7 @@ export function MatrixPanel({ l, pick, onPick, initialMode = 'lag' }: { l: Ledge
           />
           {mode === 'lag' && (
             <select class="input" value={cp.id} onChange={(e) => setCpId((e.target as HTMLSelectElement).value)} aria-label="기준 시점">
-              {l.checkpoints.map((c) => (
+              {cps.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.date < '9999' ? `${c.label} 전까지` : '학기 전체'}
                 </option>
@@ -195,7 +200,19 @@ export function MatrixPanel({ l, pick, onPick, initialMode = 'lag' }: { l: Ledge
 export function Dashboard({ m, onPick, pick, go }: { m: Model; onPick: (p: Pick) => void; pick: Pick; go: Go }) {
   const l = m.ledger;
   const cp = nextCheckpoint(l);
-  const spreads = useMemo(() => gradeSpreads(l, cp).sort((a, b) => b.spread - a.spread), [l, cp]);
+  // 학년마다 다음 시험이 다를 수 있으므로 학년별 다음 시험 기준 격차를 모은다
+  const spreads = useMemo(
+    () =>
+      grades(l)
+        .flatMap((g) => {
+          const c = nextCheckpoint(l, g);
+          return gradeSpreads(l, c)
+            .filter((x) => x.grade === g)
+            .map((x) => ({ ...x, cp: c }));
+        })
+        .sort((a, b) => b.spread - a.spread),
+    [l],
+  );
   const worst = spreads[0];
   const dday = cp.date < '9999' ? diffDays(l.settings.today, cp.date) : null;
   const baseDays = l.settings.targetWeeks * 5;
@@ -214,7 +231,7 @@ export function Dashboard({ m, onPick, pick, go }: { m: Model; onPick: (p: Pick)
     alerts.push({
       sev: s.spread >= 4 ? 'crit' : 'warn',
       what: `${s.grade}학년 ${s.subject} 반간 격차 ${s.spread}시간`,
-      why: `${cp.date < '9999' ? `${cp.label} 전까지` : '학기 전체'} ${low.join(', ')}반 ${s.min}시간, 최다 반 ${s.max}시간`,
+      why: `${s.cp.date < '9999' ? `${s.cp.label} 전까지` : '학기 전체'} ${low.join(', ')}반 ${s.min}시간, 최다 반 ${s.max}시간`,
       act: { label: '근거 보기', run: () => onPick({ cls: low[0], subject: s.subject }) },
     });
   }
@@ -334,9 +351,10 @@ function WeekdayBars({ values, max }: { values: number[]; max: number }) {
 
 export function Exams({ l, onPick }: { l: Ledger; onPick: (p: Pick) => void }) {
   const tip = useTip();
-  const [cpId, setCpId] = useState(nextCheckpoint(l).id);
+  const [cpId, setCpId] = useState<string | null>(null);
   const [grade, setGrade] = useState(grades(l)[0]);
-  const cp = l.checkpoints.find((c) => c.id === cpId) ?? nextCheckpoint(l);
+  const cps = checkpointsFor(l, grade);
+  const cp = cps.find((c) => c.id === cpId) ?? nextCheckpoint(l, grade);
   const rows = useMemo(
     () =>
       gradeSpreads(l, cp)
@@ -357,7 +375,7 @@ export function Exams({ l, onPick }: { l: Ledger; onPick: (p: Pick) => void }) {
             label="시험"
             value={cp.id}
             onChange={setCpId}
-            options={l.checkpoints.map((c) => ({ value: c.id, label: c.date < '9999' ? `${c.label} 전` : '학기 전체' }))}
+            options={cps.map((c) => ({ value: c.id, label: c.date < '9999' ? `${c.label} 전` : '학기 전체' }))}
           />
         </div>
       }

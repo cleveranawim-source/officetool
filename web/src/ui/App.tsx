@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { defaultEventsLabel, eventsAreSample } from '@events';
 import { fmtShort } from '../engine/dates';
 import { CalendarView } from './CalendarView';
 import { CellDrawer } from './CellDrawer';
@@ -48,7 +49,8 @@ export function App() {
   const l = m.ledger;
   const lowConf = m.events.filter((e) => e.rule.confidence === 'low').length;
   const errors = m.issues.filter((i) => i.level === 'error').length;
-  const srcLabel = m.p.eventSource === 'sample' ? '예시 일정' : m.p.eventSource === 'ics' ? '.ics 파일' : '구글 캘린더';
+  const sampleEv = m.p.eventSource === 'sample' && eventsAreSample;
+  const srcLabel = m.p.eventSource === 'sample' ? defaultEventsLabel : m.p.eventSource === 'ics' ? '.ics 파일' : '구글 캘린더';
 
   return (
     <TipProvider>
@@ -83,7 +85,7 @@ export function App() {
               {m.timetable.term} · {m.timetable.classes.length}학급
             </div>
             <div>
-              <i class="dot" style={{ background: m.p.eventSource === 'sample' ? 'var(--warn)' : 'var(--good)' }} />
+              <i class="dot" style={{ background: sampleEv ? 'var(--warn)' : 'var(--good)' }} />
               {srcLabel} · {m.events.length}건
             </div>
             <div>
@@ -103,12 +105,12 @@ export function App() {
             </div>
           </header>
 
-          {(m.p.eventSource === 'sample' || m.sampleTimetable) && (
+          {(sampleEv || m.sampleTimetable) && (
             <div class="banner" role="note">
               <span>
                 <b>예시 데이터</b>{' '}
                 {m.sampleTimetable ? '시간표는 익명화한 예시이고, ' : ''}
-                {m.p.eventSource === 'sample' ? '학사일정은 공휴일만 실제이고 행사는 가상입니다. ' : ''}
+                {sampleEv ? '학사일정은 공휴일만 실제이고 행사는 가상입니다. ' : ''}
                 <a href="#data" onClick={(e) => (e.preventDefault(), go('data'))} style={{ color: 'inherit', fontWeight: 600 }}>
                   데이터·설정
                 </a>

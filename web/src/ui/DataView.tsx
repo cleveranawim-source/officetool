@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { defaultEventsLabel, eventsAreSample } from '@events';
 import { calendarIdFrom, parseICS } from '../engine/ics';
 import { importClassTimetable } from '../engine/importTimetable';
 import { WEEKDAYS } from '../engine/types';
@@ -82,12 +83,12 @@ export function DataView({ m }: { m: Model }) {
               value={m.p.eventSource}
               onChange={(v) => m.set({ eventSource: v, applied: [] })}
               options={[
-                { value: 'sample', label: '예시 일정' },
+                { value: 'sample', label: defaultEventsLabel },
                 { value: 'ics', label: '.ics 파일' },
                 { value: 'calendar', label: '구글 캘린더' },
               ]}
             />
-            {m.p.eventSource === 'sample' && (
+            {m.p.eventSource === 'sample' && eventsAreSample && (
               <p class="small muted" style={{ margin: 0 }}>
                 화면을 채우기 위한 예시입니다. 공휴일은 실제 날짜이고 나머지 행사는 가상입니다.
               </p>

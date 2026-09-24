@@ -43,6 +43,7 @@ export type EventKind =
   | 'fullday' // 전일 행사: 전 교시 창체/행사
   | 'periods' // 특정 교시 창체/특별교육
   | 'dayswap' // 요일 교체 운영
+  | 'periodswap' // 그날 두 교시 맞바꿈 ("6(1)")
   | 'info'; // 시수에 영향 없음
 
 export interface EventRule {
@@ -55,6 +56,8 @@ export interface EventRule {
   classes?: string[];
   /** dayswap: 운영할 요일 인덱스 */
   swapTo?: number;
+  /** periodswap: 맞바꿀 두 교시 */
+  swap?: [number, number];
   /** 사람이 읽는 분류명 */
   label: string;
   confidence: 'high' | 'mid' | 'low';
@@ -94,4 +97,6 @@ export interface Checkpoint {
   label: string;
   /** 이 날짜 전날까지의 누적 시수를 본다 */
   date: string;
+  /** 이 시험을 보는 학년. 없으면 전 학년 */
+  grades?: number[];
 }

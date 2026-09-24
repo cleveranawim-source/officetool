@@ -3,3 +3,10 @@ declare module '@timetable' {
   const tt: Timetable;
   export default tt;
 }
+
+declare module '@events' {
+  import type { CalEvent } from './engine/types';
+  export const defaultEvents: CalEvent[];
+  export const defaultEventsLabel: string;
+  export const eventsAreSample: boolean;
+}

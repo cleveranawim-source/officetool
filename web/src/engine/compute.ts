@@ -1,7 +1,7 @@
 import { appliesTo } from './parseEvents';
 import { eachDay, weekdayIndex } from './dates';
 import { isAcademic, sortSubjects } from './subjects';
-import type { Checkpoint, ClassTimetable, EventKind, Loss, ParsedEvent, Settings, Timetable } from './types';
+import type { Checkpoint, ClassTimetable, EventKind, Loss, ParsedEvent, Settings, Slot, Timetable } from './types';
 
 export interface SwapRecord {
   date: string;
@@ -120,59 +120,26 @@ export function computeLedger(tt: Timetable, events: ParsedEvent[], settings: Se
     let anyClass = false;
 
     for (const c of classes) {
-      const counts: Record<string, number> = {};
-      dailyDelivered[c.id].push(counts);
       const mine = todays.filter((e) => appliesTo(e.rule, c.id, c.grade));
-      const base = c.week[wd] ?? [];
-
-      const off = mine.find((e) => OFF_KINDS.includes(e.rule.kind));
-      if (off) {
-        base.forEach((slot, i) => {
-          if (!slot) return;
-          losses.push(loss(date, c.id, i + 1, slot.s, slot.t, off));
-          info.lostPeriods++;
-          if (slot.t) teacher(slot.t).lost++;
-        });
-        continue;
-      }
-      info.off = false;
-
-      const swap = mine.find((e) => e.rule.kind === 'dayswap');
-      const tplIdx = swap?.rule.swapTo ?? wd;
-      const tpl = c.week[tplIdx] ?? [];
-      if (swap && tplIdx !== wd) {
-        swaps.push({
-          date,
-          cls: c.id,
-          removed: base.map((s) => s.s),
-          added: tpl.map((s) => s.s),
-          eventTitle: swap.title,
-        });
-      }
-
-      const full = mine.find((e) => e.rule.kind === 'fullday');
-      tpl.forEach((slot, i) => {
-        if (!slot) return;
-        const p = i + 1;
-        const ev =
-          full ??
-          mine.find(
-            (e) => e.rule.kind === 'exam' && !settings.examCountsAsClass && (!e.rule.periods || e.rule.periods.includes(p)),
-          ) ??
-          mine.find((e) => e.rule.kind === 'periods' && e.rule.periods!.includes(p));
-        if (ev) {
-          losses.push(loss(date, c.id, p, slot.s, slot.t, ev));
-          const label = ev.rule.kind === 'exam' ? '시험' : '행사·창체';
+      const r = classDay(c, wd, mine, settings);
+      dailyDelivered[c.id].push(r.counts);
+      for (const x of r.lost) {
+        losses.push(loss(date, c.id, x.period, x.slot.s, x.slot.t, x.event));
+        info.lostPeriods++;
+        if (x.slot.t) teacher(x.slot.t).lost++;
+        if (!r.off) {
+          const label = x.event.rule.kind === 'exam' ? '시험' : '행사·창체';
           replaced[c.id][label] = (replaced[c.id][label] ?? 0) + 1;
-          info.lostPeriods++;
-          if (slot.t) teacher(slot.t).lost++;
-          return;
         }
-        counts[slot.s] = (counts[slot.s] ?? 0) + 1;
-        delivered[c.id][slot.s] = (delivered[c.id][slot.s] ?? 0) + 1;
-        if (slot.t) teacher(slot.t).delivered++;
-        if (isAcademic(slot.s)) anyClass = true;
-      });
+      }
+      if (r.off) continue;
+      info.off = false;
+      if (r.swap) swaps.push({ date, cls: c.id, ...r.swap });
+      for (const x of r.taught) {
+        delivered[c.id][x.s] = (delivered[c.id][x.s] ?? 0) + 1;
+        if (x.t) teacher(x.t).delivered++;
+        if (isAcademic(x.s)) anyClass = true;
+      }
     }
     if (anyClass) schoolDays++;
     days.push(info);
@@ -200,24 +167,92 @@ export function computeLedger(tt: Timetable, events: ParsedEvent[], settings: Se
   };
 }
 
+export interface ClassDayResult {
+  /** 휴업·방학으로 수업이 없는 날 */
+  off: boolean;
+  counts: Record<string, number>;
+  taught: Slot[];
+  lost: { period: number; slot: Slot; event: ParsedEvent }[];
+  swap?: { removed: string[]; added: string[]; eventTitle: string };
+}
+
+/**
+ * 한 반의 하루 수업을 계산한다. 계산 엔진과 보완 제안이 같은 규칙을 쓰도록 여기 한 곳에만 둔다.
+ * 순서: 휴업·방학 → 요일 교체 → 교시 교환 → 전일 행사 > 시험 > 교시 일정
+ */
+export function classDay(c: ClassTimetable, wd: number, mine: ParsedEvent[], settings: Settings): ClassDayResult {
+  const base = c.week[wd] ?? [];
+  const off = mine.find((e) => OFF_KINDS.includes(e.rule.kind));
+  if (off) {
+    return {
+      off: true,
+      counts: {},
+      taught: [],
+      lost: base.flatMap((slot, i) => (slot ? [{ period: i + 1, slot, event: off }] : [])),
+    };
+  }
+
+  const dswap = mine.find((e) => e.rule.kind === 'dayswap');
+  const tplIdx = dswap?.rule.swapTo ?? wd;
+  const tpl = c.week[tplIdx] ?? [];
+  const swap =
+    dswap && tplIdx !== wd ? { removed: base.map((s) => s.s), added: tpl.map((s) => s.s), eventTitle: dswap.title } : undefined;
+
+  // "6(1)": 그날 두 교시를 맞바꾼 뒤 교시 일정을 적용한다
+  const row = [...tpl];
+  for (const e of mine) {
+    if (e.rule.kind !== 'periodswap' || !e.rule.swap) continue;
+    const [a, b] = e.rule.swap;
+    if (row[a - 1] && row[b - 1]) [row[a - 1], row[b - 1]] = [row[b - 1], row[a - 1]];
+  }
+
+  const counts: Record<string, number> = {};
+  const taught: Slot[] = [];
+  const lost: ClassDayResult['lost'] = [];
+  const full = mine.find((e) => e.rule.kind === 'fullday');
+  row.forEach((slot, i) => {
+    if (!slot) return;
+    const p = i + 1;
+    const ev =
+      full ??
+      mine.find((e) => e.rule.kind === 'exam' && !settings.examCountsAsClass && (!e.rule.periods || e.rule.periods.includes(p))) ??
+      mine.find((e) => e.rule.kind === 'periods' && e.rule.periods!.includes(p));
+    if (ev) {
+      lost.push({ period: p, slot, event: ev });
+      return;
+    }
+    counts[slot.s] = (counts[slot.s] ?? 0) + 1;
+    taught.push(slot);
+  });
+  return { off: false, counts, taught, lost, swap };
+}
+
 function loss(date: string, cls: string, period: number, subject: string, teacherName: string, e: ParsedEvent): Loss {
   return { date, cls, period, subject, teacher: teacherName, eventId: e.id, eventTitle: e.title, kind: e.rule.kind };
 }
 
-/** 정기고사 첫날마다 체크포인트를 만들고, 학기말을 마지막에 둔다. */
+/**
+ * 정기고사마다 체크포인트를 만든다. 학년마다 시험 날짜가 다를 수 있어
+ * 같은 제목이라도 학년 범위별로 첫날을 잡는다. 학기말은 마지막에 둔다.
+ */
 export function findCheckpoints(events: ParsedEvent[], settings: Settings): Checkpoint[] {
   const exams = events
     .filter((e) => e.rule.kind === 'exam' && e.start > settings.termStart && e.start <= settings.termEnd)
     .sort((a, b) => a.start.localeCompare(b.start));
-  const seen = new Set<string>();
-  const cps: Checkpoint[] = [];
+  const seen = new Map<string, Checkpoint>();
   for (const e of exams) {
-    if (seen.has(e.title)) continue;
-    seen.add(e.title);
-    cps.push({ id: e.id, label: e.title.replace(/\s*[1-9]\s*[-~]\s*[1-9]\s*$/, ''), date: e.start });
+    const g = e.rule.classes ? [...new Set(e.rule.classes.map((c) => Number(c.split('-')[0])))] : e.rule.grades;
+    const key = `${e.title}|${g?.join(',') ?? '*'}`;
+    if (seen.has(key)) continue;
+    const label = e.title.replace(/\s*[1-9]\s*[-~]\s*[1-9]\s*$/, '').trim();
+    seen.set(key, { id: e.id, label, date: e.start, grades: g });
   }
-  cps.push({ id: 'term-end', label: '학기 전체', date: '9999-12-31' });
-  return cps;
+  return [...seen.values(), { id: 'term-end', label: '학기 전체', date: '9999-12-31' }];
+}
+
+/** 이 체크포인트가 이 학년에 해당하는가 */
+export function cpApplies(cp: Checkpoint, grade: number): boolean {
+  return !cp.grades || cp.grades.includes(grade);
 }
 
 /* ---------- 조회 도구 ---------- */
@@ -260,6 +295,7 @@ export function gradeSpreads(l: Ledger, cp: Checkpoint): GradeSpread[] {
   const out: GradeSpread[] = [];
   const grades = [...new Set(l.classes.map((c) => c.grade))].sort();
   for (const g of grades) {
+    if (!cpApplies(cp, g)) continue;
     const cs = l.classes.filter((c) => c.grade === g);
     for (const s of l.subjectsByGrade[g]) {
       if (!isAcademic(s)) continue;

@@ -1,6 +1,6 @@
-import { appliesTo } from './parseEvents';
+import { appliesTo, isMovable } from './parseEvents';
 import { fmtShort } from './dates';
-import { deliveredBefore, type Ledger } from './compute';
+import { classDay, deliveredBefore, type Ledger } from './compute';
 import { isAcademic } from './subjects';
 import type { CalEvent, EventRule, ParsedEvent } from './types';
 import { WEEKDAYS } from './types';
@@ -50,7 +50,7 @@ interface State {
   target: Map<string, number>; // key cls|s
   total: Map<string, number>;
   /** 체크포인트별 누적 (cls|s) */
-  cp: { date: string; val: Map<string, number> }[];
+  cp: { date: string; grades?: number[]; val: Map<string, number> }[];
 }
 
 const k = (c: string, s: string) => `${c}|${s}`;
@@ -72,7 +72,7 @@ function buildState(l: Ledger): State {
     .map((x) => {
       const val = new Map<string, number>();
       for (const c of l.classes) for (const s of subjects.get(c.id)!) val.set(k(c.id, s), deliveredBefore(l, c.id, s, x.date));
-      return { date: x.date, val };
+      return { date: x.date, grades: x.grades, val };
     });
   return { classes: l.classes.map((c) => ({ id: c.id, grade: c.grade })), subjects, target: tgt, total, cp };
 }
@@ -104,9 +104,13 @@ function metrics(st: State, deltas: Delta[] = []): Metrics {
   }
   let maxSpread = 0;
   const grades = [...new Set(st.classes.map((c) => c.grade))];
-  const pools = [...st.cp.map((c) => ({ date: c.date, val: c.val })), { date: undefined as string | undefined, val: st.total }];
+  const pools = [
+    ...st.cp.map((c) => ({ date: c.date as string | undefined, grades: c.grades, val: c.val })),
+    { date: undefined as string | undefined, grades: undefined as number[] | undefined, val: st.total },
+  ];
   for (const pool of pools) {
     for (const g of grades) {
+      if (pool.grades && !pool.grades.includes(g)) continue;
       const cs = st.classes.filter((c) => c.grade === g);
       const subs = new Set(cs.flatMap((c) => st.subjects.get(c.id)!));
       for (const s of subs) {
@@ -154,22 +158,41 @@ function candidates(l: Ledger): Candidate[] {
     if (day.date <= today || day.off) continue;
     const active = day.events.filter((e) => e.rule.kind !== 'info');
 
+    /** 그날 일정을 바꿨을 때 반별 과목 시수 변화 (실제 계산 규칙 그대로) */
+    const diff = (next: ParsedEvent[]): Delta[] => {
+      const deltas: Delta[] = [];
+      for (const c of l.classes) {
+        const mineNow = active.filter((e) => appliesTo(e.rule, c.id, c.grade));
+        const mineNext = next.filter((e) => appliesTo(e.rule, c.id, c.grade));
+        const a = classDay(c, day.weekday, mineNow, l.settings).counts;
+        const b = classDay(c, day.weekday, mineNext, l.settings).counts;
+        for (const s of new Set([...Object.keys(a), ...Object.keys(b)])) {
+          const n = (b[s] ?? 0) - (a[s] ?? 0);
+          if (n && isAcademic(s)) deltas.push({ cls: c.id, subject: s, n, date: day.date });
+        }
+      }
+      return deltas;
+    };
+
     // 1) 일정이 전혀 없는 날: 요일 교체
     if (active.length === 0) {
       for (let w = 0; w < 5; w++) {
         if (w === day.weekday) continue;
-        const deltas: Delta[] = [];
-        for (const c of l.classes) {
-          for (const slot of c.week[day.weekday]) if (isAcademic(slot.s)) deltas.push({ cls: c.id, subject: slot.s, n: -1, date: day.date });
-          for (const slot of c.week[w]) if (isAcademic(slot.s)) deltas.push({ cls: c.id, subject: slot.s, n: 1, date: day.date });
-        }
-        out.push({ type: 'dayswap', date: day.date, swapTo: w, deltas });
+        const ev: ParsedEvent = {
+          id: 'cand',
+          title: '',
+          start: day.date,
+          end: day.date,
+          source: 'plan',
+          rule: { kind: 'dayswap', swapTo: w, label: '', confidence: 'high', reason: '' },
+        };
+        out.push({ type: 'dayswap', date: day.date, swapTo: w, deltas: diff([ev]) });
       }
     }
 
     // 2) 하루짜리 부분 교시 일정: 다른 교시로 옮기기
     for (const e of active) {
-      if (e.rule.kind !== 'periods' || e.start !== e.end || !e.rule.periods) continue;
+      if (e.rule.kind !== 'periods' || e.start !== e.end || !e.rule.periods || !isMovable(e.title.split(' ← ')[0])) continue;
       const len = e.rule.periods.length;
       const nPeriods = Math.max(...l.classes.map((c) => c.week[day.weekday].length));
       if (len >= nPeriods) continue;
@@ -177,14 +200,18 @@ function candidates(l: Ledger): Candidate[] {
       for (let start = 1; start + len - 1 <= nPeriods; start++) {
         if (start === first) continue;
         const next = Array.from({ length: len }, (_, i) => start + i);
-        const deltas: Delta[] = [];
-        for (const c of l.classes) {
-          if (!appliesTo(e.rule, c.id, c.grade)) continue;
-          const row = c.week[day.weekday];
-          for (const p of e.rule.periods) if (row[p - 1] && isAcademic(row[p - 1].s)) deltas.push({ cls: c.id, subject: row[p - 1].s, n: 1, date: day.date });
-          for (const p of next) if (row[p - 1] && isAcademic(row[p - 1].s)) deltas.push({ cls: c.id, subject: row[p - 1].s, n: -1, date: day.date });
-        }
-        out.push({ type: 'move', date: day.date, event: e, newPeriods: next, deltas });
+        // 같은 대상에게 이미 다른 교시 일정이 있는 칸으로는 옮기지 않는다
+        const clash = active.some(
+          (x) =>
+            x !== e &&
+            (x.rule.kind === 'periods' || x.rule.kind === 'exam' || x.rule.kind === 'fullday') &&
+            (!x.rule.periods || x.rule.periods.some((p) => next.includes(p))) &&
+            l.classes.some((c) => appliesTo(x.rule, c.id, c.grade) && appliesTo(e.rule, c.id, c.grade)),
+        );
+        if (clash) continue;
+        const moved = active.map((x) => (x === e ? { ...x, rule: { ...x.rule, periods: next } } : x));
+        const deltas = diff(moved);
+        if (deltas.length) out.push({ type: 'move', date: day.date, event: e, newPeriods: next, deltas });
       }
     }
   }
@@ -265,7 +292,7 @@ function describe(l: Ledger, st: State, c: Candidate, before: Metrics, after: Me
     id: `move-${e.id}-${to[0]}`,
     type: 'move',
     date: c.date,
-    title: `${fmtShort(c.date)} "${e.title}"을 ${span(from)} → ${span(to)}로 이동`,
+    title: `${fmtShort(c.date)} "${e.title.split(" ← ")[0]}"을 ${span(from)} → ${span(to)}로 이동`,
     why: `지금 교시에는 부족한 과목이 걸려 있습니다. 여유 있는 과목이 있는 교시로 옮깁니다.`,
     override: { eventId: e.id, rule: { periods: to, label: `${span(to)} 특별교육` } },
     deltas: c.deltas,

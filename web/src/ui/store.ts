@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import defaultTimetable from '@timetable';
-import { sampleEvents } from '../data/sampleEvents';
+import { defaultEvents } from '@events';
 import { computeLedger, type Ledger } from '../engine/compute';
 import { mergeHolidays } from '../engine/holidays';
 import { parseEvents } from '../engine/parseEvents';
@@ -20,7 +20,7 @@ export interface Persisted {
   eventsFetchedAt?: string;
 }
 
-const KEY = 'sisufit:v1';
+const KEY = 'sisufit:v2';
 
 function todayISO(): string {
   const d = new Date();
@@ -93,7 +93,7 @@ export function useModel(): Model {
   const s = p.settings;
 
   const rawEvents = useMemo(() => {
-    const src = p.eventSource === 'sample' ? sampleEvents : p.events ?? [];
+    const src = p.eventSource === 'sample' ? defaultEvents : p.events ?? [];
     return mergeHolidays(src, s.termStart, s.termEnd);
   }, [p.eventSource, p.events, s.termStart, s.termEnd]);
 

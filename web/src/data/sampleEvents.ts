@@ -28,3 +28,7 @@ export const sampleEvents: CalEvent[] = rows.map(([start, end, title], i) => ({
   end,
   source: 'sample',
 }));
+
+export const defaultEvents = sampleEvents;
+export const defaultEventsLabel = '예시 일정';
+export const eventsAreSample = true;

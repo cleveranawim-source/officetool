@@ -5,7 +5,7 @@ import { WEEKDAYS } from '../engine/types';
 import type { Model } from './store';
 import { KIND_LABEL, KindTag, Panel, useTip } from './parts';
 
-const KINDS: EventKind[] = ['holiday', 'vacation', 'exam', 'fullday', 'periods', 'dayswap', 'info'];
+const KINDS: EventKind[] = ['holiday', 'vacation', 'exam', 'fullday', 'periods', 'dayswap', 'periodswap', 'info'];
 
 export function CalendarView({ m }: { m: Model }) {
   const l = m.ledger;
@@ -203,6 +203,7 @@ function describeRule(e: ParsedEvent): string {
   const who = r.classes ? r.classes.join(', ') : r.grades ? `${r.grades.join('·')}학년` : '전교';
   const when = r.periods ? (r.periods.length === 1 ? `${r.periods[0]}교시` : `${r.periods[0]}~${r.periods[r.periods.length - 1]}교시`) : '';
   if (r.kind === 'dayswap') return `${who} ${WEEKDAYS[r.swapTo ?? 0]}요일 시간표`;
+  if (r.kind === 'periodswap') return `${who} ${r.swap?.[0]}교시↔${r.swap?.[1]}교시`;
   if (r.kind === 'info') return '시수에 반영 안 함';
   return [who, when, KIND_LABEL[r.kind]].filter(Boolean).join(' ');
 }
