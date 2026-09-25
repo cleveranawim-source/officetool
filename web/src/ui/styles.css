@@ -471,3 +471,14 @@ details summary { cursor: pointer; font-size: 13px; color: var(--ink-2); font-we
   .setup-card { margin: 16px auto; padding: 20px 16px; border-radius: 12px; }
   .setup-head, .setup-foot { padding-inline: 16px; }
 }
+
+/* ---------- NEIS 학교 찾기 ---------- */
+.neis-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-height: 260px; overflow-y: auto; }
+.neis-item {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left; padding: 10px 12px;
+  border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer;
+}
+.neis-item:hover { border-color: var(--line-strong); }
+.neis-item.on { border-color: var(--accent); background: var(--accent-soft); }
+.neis-item:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.neis-fallback a, .neis a { color: var(--accent); font-weight: 600; text-underline-offset: 2px; }

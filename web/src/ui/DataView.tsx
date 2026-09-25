@@ -9,6 +9,7 @@ import { WEEKDAYS, type CalEvent } from '../engine/types';
 import { inAppsScript, server } from './bridge';
 import type { Model } from './store';
 import { Panel, Seg } from './parts';
+import { NeisPanel } from './NeisPanel';
 
 export function DataView({ m }: { m: Model }) {
   const tt = m.timetable;
@@ -128,6 +129,7 @@ export function DataView({ m }: { m: Model }) {
                 { value: 'sample', label: defaultEventsLabel },
                 { value: 'ics', label: '파일·시트' },
                 { value: 'calendar', label: '구글 캘린더' },
+                { value: 'neis', label: 'NEIS' },
               ]}
             />
             {m.p.eventSource === 'sample' && eventsAreSample && (
@@ -169,6 +171,18 @@ export function DataView({ m }: { m: Model }) {
                   시트 읽기
                 </button>
               </div>
+            )}
+            {m.p.eventSource === 'neis' && (
+              <NeisPanel
+                defaultName={m.p.school?.name ?? ''}
+                termStart={s.termStart}
+                termEnd={s.termEnd}
+                initial={m.p.neis}
+                onEvents={(events, school, text) => {
+                  m.set({ events, eventSource: 'neis', neis: school, eventsFetchedAt: new Date().toISOString(), applied: [], overrides: {} });
+                  setMsg(text);
+                }}
+              />
             )}
             {m.p.eventSource === 'calendar' &&
               (gas ? (

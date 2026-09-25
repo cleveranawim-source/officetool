@@ -10,6 +10,7 @@ import { anonymizeTeachers } from './privacy';
 import { parseEventList } from './eventList';
 import { looksLikeCalendarGrid, parseCalendarGrid } from './calendarGrid';
 import { readEventTable, termOf } from './eventTable';
+import { neisRows, neisScheduleToEvents, neisUrl, toSchools } from './neis';
 import type { CalEvent, Settings, Timetable } from './types';
 import sample from '../data/sample-timetable.json';
 import { sampleEvents } from '../data/sampleEvents';
@@ -476,6 +477,60 @@ describe('달력형 학사일정', () => {
     expect(list.format).toBe('list');
     expect(list.events.map((e) => e.start)).toEqual(['2027-01-05', '2026-12-24']);
     expect(termOf('2026-08-18')).toEqual({ year: 2026, semester: 2 });
+  });
+});
+
+describe('NEIS 학사일정', () => {
+  const row = (ymd: string, name: string, extra: Record<string, string> = {}) => ({
+    AA_YMD: ymd,
+    EVENT_NM: name,
+    SBTR_DD_SC_NM: '해당없음',
+    ONE_GRADE_EVENT_YN: 'Y',
+    TW_GRADE_EVENT_YN: 'Y',
+    THREE_GRADE_EVENT_YN: 'Y',
+    ...extra,
+  });
+  const res = (rows: object[]) =>
+    JSON.stringify({ SchoolSchedule: [{ head: [{ list_total_count: rows.length }, { RESULT: { CODE: 'INFO-000' } }] }, { row: rows }] });
+
+  it('응답에서 행과 건수를 꺼내고, 오류는 한국어로 알린다', () => {
+    expect(neisRows(res([row('20261007', '중간고사')]), 'SchoolSchedule')).toMatchObject({ total: 1, rows: [{ EVENT_NM: '중간고사' }] });
+    expect(neisRows({ RESULT: { CODE: 'INFO-200', MESSAGE: '해당하는 데이터가 없습니다.' } }, 'SchoolSchedule').rows).toEqual([]);
+    expect(() => neisRows({ RESULT: { CODE: 'ERROR-290' } }, 'SchoolSchedule')).toThrow('인증키');
+  });
+
+  it('주소에 키·학교·기간을 넣는다 (키가 없으면 5건)', () => {
+    const u = new URL(neisUrl('SchoolSchedule', { ATPT_OFCDC_SC_CODE: 'B10', SD_SCHUL_CODE: '7130000' }, ' abc '));
+    expect(u.searchParams.get('KEY')).toBe('abc');
+    expect(u.searchParams.get('pSize')).toBe('1000');
+    expect(new URL(neisUrl('schoolInfo', { SCHUL_NM: '한빛중' })).searchParams.get('pSize')).toBe('5');
+  });
+
+  it('학교 검색 결과를 정리한다', () => {
+    const r = toSchools([{ ATPT_OFCDC_SC_CODE: 'B10', ATPT_OFCDC_SC_NM: '서울특별시교육청', SD_SCHUL_CODE: '7130000', SCHUL_NM: '한빛중학교', SCHUL_KND_SC_NM: '중학교', ORG_RDNMA: ' 서울 어딘가 ' }]);
+    expect(r[0]).toEqual({ office: 'B10', officeName: '서울특별시교육청', code: '7130000', name: '한빛중학교', kind: '중학교', address: '서울 어딘가' });
+  });
+
+  it('주말·토요휴업일은 빼고, 휴업일·학년 표시를 제목에 담는다', () => {
+    const ev = neisScheduleToEvents([
+      row('20261010', '토요휴업일'),
+      row('20261011', '학급 행사'),
+      row('20261009', '한글날', { SBTR_DD_SC_NM: '공휴일' }),
+      row('20261016', '개교기념일', { SBTR_DD_SC_NM: '휴업일' }),
+      row('20261102', '학교장재량', { SBTR_DD_SC_NM: '휴업일' }),
+      row('20261007', '중간고사', { THREE_GRADE_EVENT_YN: 'N' }),
+      row('20261015', '2학년 수련회', { ONE_GRADE_EVENT_YN: 'N', THREE_GRADE_EVENT_YN: 'N' }),
+      row('20261007', '중간고사', { THREE_GRADE_EVENT_YN: 'N' }),
+    ]);
+    expect(ev.map((e) => `${e.start} ${e.title}`)).toEqual([
+      '2026-10-07 (1,2학년) 중간고사',
+      '2026-10-09 한글날 공휴일',
+      '2026-10-15 2학년 수련회',
+      '2026-10-16 개교기념일 휴업일',
+      '2026-11-02 학교장재량 휴업일',
+    ]);
+    expect(classifyTitle(ev[0].title)).toMatchObject({ kind: 'exam', grades: [1, 2] });
+    expect(classifyTitle(ev[4].title).kind).toBe('holiday');
   });
 });
 

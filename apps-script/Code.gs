@@ -82,6 +82,12 @@ function readTimetableSheet(url) {
     .join('\n');
 }
 
+/** NEIS 교육정보 개방 포털: 브라우저가 직접 못 부를 때 대신 받는다 (NEIS 주소만) */
+function fetchNeis(url) {
+  if (String(url).indexOf('https://open.neis.go.kr/hub/') !== 0) throw new Error('NEIS 주소만 읽을 수 있습니다.');
+  return UrlFetchApp.fetch(url, { muteHttpExceptions: true }).getContentText('UTF-8');
+}
+
 /** 학사일정 시트: 모든 시트를 보이는 값 그대로 [{sheet, rows}] 로 */
 function readEventSheets(url) {
   return SpreadsheetApp.openByUrl(url)

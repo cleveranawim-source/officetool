@@ -53,7 +53,7 @@ export function App() {
   const lowConf = m.events.filter((e) => e.rule.confidence === 'low').length;
   const errors = m.issues.filter((i) => i.level === 'error').length;
   const sampleEv = m.p.eventSource === 'sample' && eventsAreSample;
-  const srcLabel = m.p.eventSource === 'sample' ? defaultEventsLabel : m.p.eventSource === 'ics' ? '학사일정 파일·시트' : '구글 캘린더';
+  const srcLabel = m.p.eventSource === 'sample' ? defaultEventsLabel : m.p.eventSource === 'ics' ? '학사일정 파일·시트' : m.p.eventSource === 'neis' ? 'NEIS 학사일정' : '구글 캘린더';
 
   return (
     <TipProvider>

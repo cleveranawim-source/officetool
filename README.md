@@ -22,6 +22,7 @@
 2. **시간표** 엑셀 파일 올리기 (시간표 프로그램의 "전체 학반 시간표" 또는 "학반별 시간표")
 3. **학사일정** 넣기: 구글 캘린더에서 받은 `.ics` 파일, 또는 구글 시트·엑셀 학사일정표(.xlsx 올리기나 복사해 붙여넣기)
    - 목록형(`날짜 | 일정`)과 **달력형**(월~금 칸에 날짜와 그날 일정) 모두 알아서 알아봅니다
+   - 또는 **NEIS**: 학교 이름으로 찾아 학교가 NEIS에 입력한 학사일정을 바로 받기 (open.neis.go.kr 인증키 필요, 무료)
    - 달력형은 한 칸에 여러 줄 일정, ♥·♠ 같은 표시, 달·해가 바뀌는 주, 한 시트에 이어 붙인 1·2학기 표를 읽습니다
 4. 자동 분류 결과 확인 → 결과 보기
 
@@ -64,7 +65,7 @@ web/src/engine/   계산 엔진 (화면과 분리된 순수 함수, 테스트 �
   parseEvents.ts    일정 이름 → 시수 규칙
   compute.ts        반·과목·날짜별 시수 계산
   suggest.ts        보완 제안 탐색
-  importTimetable.ts, ics.ts, eventList.ts, calendarGrid.ts   가져오기
+  importTimetable.ts, ics.ts, eventList.ts, calendarGrid.ts, neis.ts   가져오기
 web/src/ui/       화면 (Preact)
 apps-script/      (선택) 구글 Apps Script 웹앱: 학교 캘린더 직접 연결
 docs/             기획·설계·배포 문서

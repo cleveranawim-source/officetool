@@ -11,6 +11,8 @@ import type { CalEvent, EventKind, EventRule, Settings } from '../engine/types';
 import { WEEKDAYS } from '../engine/types';
 import { validateTimetable } from '../engine/validate';
 import { readEventsFile, readTimetableFile } from './files';
+import { NeisPanel } from './NeisPanel';
+import type { NeisSchool } from '../engine/neis';
 import { BrandMark, KIND_LABEL, KindTag, Seg } from './parts';
 import type { Model, SchoolInfo } from './store';
 
@@ -33,7 +35,8 @@ export function Setup({ m }: { m: Model }) {
   const [tt, setTt] = useState<(ImportResult & { sheet?: string }) | null>(null);
   const [hideNames, setHideNames] = useState(false);
   const [events, setEvents] = useState<CalEvent[] | null>(null);
-  const [evSource, setEvSource] = useState<'ics' | 'sheet' | 'skip'>('ics');
+  const [evSource, setEvSource] = useState<'ics' | 'sheet' | 'neis' | 'skip'>('ics');
+  const [neisSchool, setNeisSchool] = useState<NeisSchool | undefined>(m.p.neis);
   const [overrides, setOverrides] = useState<Record<string, Partial<EventRule>>>({});
 
   const term = `${school.year}학년도 ${school.semester}학기`;
@@ -50,7 +53,8 @@ export function Setup({ m }: { m: Model }) {
       settings,
       timetable: hideNames ? anonymizeTeachers(timetable) : timetable,
       events: events ?? [],
-      eventSource: 'ics',
+      eventSource: evSource === 'neis' ? 'neis' : 'ics',
+      neis: evSource === 'neis' ? neisSchool : m.p.neis,
       overrides,
       applied: [],
     });
@@ -76,7 +80,20 @@ export function Setup({ m }: { m: Model }) {
       <main class="setup-card">
         {step === 0 && <StepSchool school={school} setSchool={setSchool} settings={settings} setSettings={setSettings} />}
         {step === 1 && <StepTimetable tt={tt} setTt={setTt} hideNames={hideNames} setHideNames={setHideNames} school={school.name} term={term} />}
-        {step === 2 && <StepEvents settings={settings} year={school.year} semester={school.semester} source={evSource} setSource={setEvSource} events={events} setEvents={setEvents} />}
+        {step === 2 && (
+          <StepEvents
+            settings={settings}
+            schoolName={school.name}
+            year={school.year}
+            semester={school.semester}
+            source={evSource}
+            setSource={setEvSource}
+            events={events}
+            setEvents={setEvents}
+            neisSchool={neisSchool}
+            setNeisSchool={setNeisSchool}
+          />
+        )}
         {step === 3 && tt && (
           <StepReview tt={tt} events={events ?? []} settings={settings} overrides={overrides} setOverrides={setOverrides} />
         )}
@@ -429,6 +446,9 @@ function StepTimetable({
 
 function StepEvents({
   settings,
+  schoolName,
+  neisSchool,
+  setNeisSchool,
   year,
   semester,
   source,
@@ -437,10 +457,13 @@ function StepEvents({
   setEvents,
 }: {
   settings: Settings;
+  schoolName: string;
+  neisSchool?: NeisSchool;
+  setNeisSchool: (s: NeisSchool) => void;
   year: number;
   semester: 1 | 2;
-  source: 'ics' | 'sheet' | 'skip';
-  setSource: (s: 'ics' | 'sheet' | 'skip') => void;
+  source: 'ics' | 'sheet' | 'neis' | 'skip';
+  setSource: (s: 'ics' | 'sheet' | 'neis' | 'skip') => void;
   events: CalEvent[] | null;
   setEvents: (e: CalEvent[] | null) => void;
 }) {
@@ -492,6 +515,7 @@ function StepEvents({
         options={[
           { value: 'ics', label: '구글 캘린더' },
           { value: 'sheet', label: '구글 시트·엑셀' },
+          { value: 'neis', label: 'NEIS' },
           { value: 'skip', label: '나중에 넣기' },
         ]}
       />
@@ -510,6 +534,25 @@ function StepEvents({
             <b>.ics 파일 올리기</b>
             <span>끌어다 놓거나 눌러서 고르기</span>
           </label>
+        </div>
+      )}
+      {source === 'neis' && (
+        <div class="stack">
+          <p class="small muted" style={{ margin: 0 }}>
+            학교가 NEIS에 입력한 학사일정을 받습니다. NEIS 일정은 보통 행사 이름만 있고 교시가 없으니, 교시 단위 행사는 확인 단계에서 고치거나 시트·캘린더와 함께 쓰세요.
+          </p>
+          <NeisPanel
+            defaultName={schoolName}
+            termStart={settings.termStart}
+            termEnd={settings.termEnd}
+            initial={neisSchool}
+            onEvents={(ev, s, text) => {
+              setErr('');
+              setNeisSchool(s);
+              setNote(text);
+              setEvents(ev);
+            }}
+          />
         </div>
       )}
       {source === 'sheet' && (

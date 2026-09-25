@@ -1,3 +1,4 @@
+import type { NeisSchool } from '../engine/neis';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import defaultTimetable from '@timetable';
 import { defaultEvents, eventsAreSample } from '@events';
@@ -27,7 +28,9 @@ export interface Persisted {
   applied: string[];
   timetable?: Timetable;
   events?: CalEvent[];
-  eventSource: 'sample' | 'ics' | 'calendar';
+  eventSource: 'sample' | 'ics' | 'calendar' | 'neis';
+  /** NEIS에서 고른 학교 (학사일정 다시 받기용) */
+  neis?: NeisSchool;
   calendarId?: string;
   eventsFetchedAt?: string;
 }

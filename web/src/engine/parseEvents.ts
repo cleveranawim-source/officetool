@@ -154,6 +154,10 @@ export function classifyTitle(rawTitle: string, rules: RuleSet = DEFAULT_RULES):
   const scope = parseScope(title);
   const note = removed.length ? ` (괄호 "${removed.join('", "')}"는 뺌)` : '';
 
+  // 휴업·휴일이면 학생 수업이 없다: "학교장재량휴업일"의 "교장"을 교직원 일정으로 보지 않게 먼저 본다
+  const dayOff = findWord(title, rules.holiday.filter((w) => /휴업|휴일/.test(w)));
+  if (dayOff) return { kind: 'holiday', ...scope, label: '휴업일', confidence: 'high', reason: `"${dayOff}" 포함` };
+
   const staff = findWord(title, rules.staff);
   if (staff) return { kind: 'info', ...scope, label: '교직원·기타 일정', confidence: 'high', reason: `"${staff}" 포함 — 학생 수업과 무관${note}` };
 

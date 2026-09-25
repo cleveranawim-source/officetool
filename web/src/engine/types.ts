@@ -33,7 +33,7 @@ export interface CalEvent {
   end: string;
   description?: string;
   /** auto: 공휴일 자동 추가, sample: 예시 일정, calendar: 구글 캘린더, manual: 직접 입력, plan: 보완 제안 적용 */
-  source: 'auto' | 'sample' | 'calendar' | 'manual' | 'plan';
+  source: 'auto' | 'sample' | 'calendar' | 'manual' | 'plan' | 'neis';
 }
 
 export type EventKind =
