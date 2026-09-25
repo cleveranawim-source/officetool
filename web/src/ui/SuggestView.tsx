@@ -75,7 +75,7 @@ export function SuggestView({ m, onPick }: { m: Model; onPick: (p: Pick) => void
       <div class="grid-main">
         <Panel
           title="보완 제안"
-          hint={`${fmtShort(m.ledger.settings.today)} 이후 일정이 없는 날과 한 교시짜리 행사만 바꿉니다. 전교가 같은 요일 시간표를 쓰므로 교사 겹침이 생기지 않습니다.`}
+          hint={`${fmtShort(m.ledger.settings.today)} 이후만 바꿉니다. 요일 교체는 교시 수와 창체가 같은 요일끼리(하교 시간·창체 시수 그대로), 전교가 함께 바꾸므로 교사 겹침이 없습니다. 어느 시험 기준으로든 격차나 부족 시수를 늘리는 안은 내놓지 않습니다.`}
         >
           {suggestions.length === 0 ? (
             <div class="empty">지금 일정으로는 더 나아지는 교체안이 없습니다.</div>
@@ -101,9 +101,11 @@ export function SuggestView({ m, onPick }: { m: Model; onPick: (p: Pick) => void
                     <span>
                       부족 시수 <b>{s.before.deficitHours}</b> → <b>{s.after.deficitHours}</b>
                     </span>
-                    <span>
-                      최대 격차 <b>{s.before.maxSpread}</b> → <b>{s.after.maxSpread}</b>
-                    </span>
+                    {s.spreadChanges.map((c) => (
+                      <span key={c.label}>
+                        {c.label} 최대 격차 <b>{c.before}</b> → <b>{c.after}</b>
+                      </span>
+                    ))}
                   </div>
                   <div class="effects">
                     {s.highlights.map((h) => {

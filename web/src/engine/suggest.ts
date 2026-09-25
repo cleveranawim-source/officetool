@@ -32,6 +32,8 @@ export interface Suggestion {
   before: Metrics;
   after: Metrics;
   highlights: string[];
+  /** 반간 격차가 줄어든 기준점 (시험 전, 학기 전체) */
+  spreadChanges: { label: string; before: number; after: number }[];
 }
 
 export interface Metrics {
@@ -42,6 +44,8 @@ export interface Metrics {
   deficitHours: number;
   /** 체크포인트별 최대 반간 격차 */
   maxSpread: number;
+  /** 기준점(시험별, 마지막은 학기 전체)마다 학년·과목 최대 반간 격차 */
+  spreadByCheckpoint: number[];
 }
 
 interface State {
@@ -103,12 +107,14 @@ function metrics(st: State, deltas: Delta[] = []): Metrics {
     }
   }
   let maxSpread = 0;
+  const spreadByCheckpoint: number[] = [];
   const grades = [...new Set(st.classes.map((c) => c.grade))];
   const pools = [
     ...st.cp.map((c) => ({ date: c.date as string | undefined, grades: c.grades, val: c.val })),
     { date: undefined as string | undefined, grades: undefined as number[] | undefined, val: st.total },
   ];
   for (const pool of pools) {
+    let poolMax = 0;
     for (const g of grades) {
       if (pool.grades && !pool.grades.includes(g)) continue;
       const cs = st.classes.filter((c) => c.grade === g);
@@ -125,12 +131,14 @@ function metrics(st: State, deltas: Delta[] = []): Metrics {
         }
         if (max >= min) {
           score += (max - min) ** 2;
+          poolMax = Math.max(poolMax, max - min);
           if (pool.date) maxSpread = Math.max(maxSpread, max - min);
         }
       }
     }
+    spreadByCheckpoint.push(poolMax);
   }
-  return { score, deficitCells, deficitHours, maxSpread };
+  return { score, deficitCells, deficitHours, maxSpread, spreadByCheckpoint };
 }
 
 function applyDeltas(st: State, deltas: Delta[]) {
@@ -149,6 +157,16 @@ interface Candidate {
   swapTo?: number;
   event?: ParsedEvent;
   newPeriods?: number[];
+}
+
+/** 모든 반에서 두 요일의 교시 수와 창체 수가 같은가 */
+function sameShape(l: Ledger, a: number, b: number): boolean {
+  return l.classes.every((c) => {
+    const x = c.week[a] ?? [];
+    const y = c.week[b] ?? [];
+    const cc = (d: typeof x) => d.filter((s) => !isAcademic(s.s)).length;
+    return x.length === y.length && cc(x) === cc(y);
+  });
 }
 
 function candidates(l: Ledger, rules: RuleSet): Candidate[] {
@@ -175,9 +193,10 @@ function candidates(l: Ledger, rules: RuleSet): Candidate[] {
     };
 
     // 1) 일정이 전혀 없는 날: 요일 교체
+    //    교시 수와 창체 수가 같은 요일끼리만 (하교 시간·창체 시수가 바뀌지 않게)
     if (active.length === 0) {
       for (let w = 0; w < 5; w++) {
-        if (w === day.weekday) continue;
+        if (w === day.weekday || !sameShape(l, day.weekday, w)) continue;
         const ev: ParsedEvent = {
           id: 'cand',
           title: '',
@@ -231,6 +250,7 @@ export function suggest(l: Ledger, limit = 4, rules: RuleSet = DEFAULT_RULES): {
     for (const c of pool) {
       if (usedDates.has(c.date)) continue;
       const m = metrics(st, c.deltas);
+      if (!doesNoHarm(current, m)) continue;
       if (!best || m.score < best.m.score) best = { c, m };
     }
     if (!best || best.m.score >= current.score - 1) break;
@@ -241,6 +261,14 @@ export function suggest(l: Ledger, limit = 4, rules: RuleSet = DEFAULT_RULES): {
     current = m;
   }
   return { base, list, final: current };
+}
+
+function spreadChanges(l: Ledger, before: Metrics, after: Metrics): Suggestion['spreadChanges'] {
+  // 지표 순서: 시험 기준점들(학기 전체 제외) 다음 학기 전체
+  const labels = [...l.checkpoints.filter((c) => c.date !== '9999-12-31').map((c) => `${c.label} 전`), '학기 전체'];
+  return labels
+    .map((label, i) => ({ label, before: before.spreadByCheckpoint[i], after: after.spreadByCheckpoint[i] }))
+    .filter((x) => x.after < x.before);
 }
 
 function net(deltas: Delta[]): Map<string, number> {
@@ -281,6 +309,7 @@ function describe(l: Ledger, st: State, c: Candidate, before: Metrics, after: Me
       deltas: c.deltas,
       before,
       after,
+      spreadChanges: spreadChanges(l, before, after),
       highlights: fixed.length ? fixed.slice(0, 8) : [`늘어나는 과목: ${gainers.slice(0, 5).join(', ')}`, `줄어드는 과목: ${losers.slice(0, 5).join(', ')}`],
     };
   }
@@ -298,8 +327,18 @@ function describe(l: Ledger, st: State, c: Candidate, before: Metrics, after: Me
     deltas: c.deltas,
     before,
     after,
+    spreadChanges: spreadChanges(l, before, after),
     highlights: fixed.length ? fixed.slice(0, 8) : [`되살아나는 과목: ${gainers.slice(0, 5).join(', ')}`],
   };
+}
+
+/**
+ * 제안은 아무것도 나쁘게 만들면 안 된다: 어느 시험 기준으로든 최대 반간 격차가 늘거나
+ * 편제 부족 시수가 늘면 점수가 좋아져도 제외한다.
+ */
+export function doesNoHarm(before: Metrics, after: Metrics): boolean {
+  if (after.deficitHours > before.deficitHours) return false;
+  return after.spreadByCheckpoint.every((v, i) => v <= (before.spreadByCheckpoint[i] ?? Infinity));
 }
 
 /** 현재 계획(적용된 제안 포함)의 지표 */

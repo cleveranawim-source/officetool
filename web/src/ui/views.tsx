@@ -239,7 +239,15 @@ export function Dashboard({ m, onPick, pick, go }: { m: Model; onPick: (p: Pick)
     alerts.push({
       sev: 'info',
       what: `보완안 ${m.suggestions.length}개를 찾았습니다`,
-      why: `적용하면 부족 시수 ${m.baseMetrics.deficitHours} → ${m.suggestions[m.suggestions.length - 1].after.deficitHours}, 시험 전 최대 격차 ${m.baseMetrics.maxSpread} → ${m.suggestions[m.suggestions.length - 1].after.maxSpread}`,
+      why: (() => {
+        const a = m.suggestions[m.suggestions.length - 1].after;
+        const b = m.baseMetrics;
+        const lastOf = (x: number[]) => x[x.length - 1];
+        const parts = [`부족 시수 ${b.deficitHours} → ${a.deficitHours}`];
+        if (a.maxSpread < b.maxSpread) parts.push(`시험 전 최대 격차 ${b.maxSpread} → ${a.maxSpread}`);
+        if (lastOf(a.spreadByCheckpoint) < lastOf(b.spreadByCheckpoint)) parts.push(`학기 전체 최대 격차 ${lastOf(b.spreadByCheckpoint)} → ${lastOf(a.spreadByCheckpoint)}`);
+        return `모두 적용하면 ${parts.join(', ')}. 어떤 제안도 격차를 늘리지 않습니다.`;
+      })(),
       act: { label: '제안 보기', run: () => go('suggest') },
     });
   if (lowConf)

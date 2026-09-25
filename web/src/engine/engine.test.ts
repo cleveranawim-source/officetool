@@ -224,13 +224,15 @@ describe('시수 계산', () => {
 });
 
 describe('보완 제안', () => {
-  it('월요일 손실을 요일 교체로 메운다', () => {
-    const events: CalEvent[] = [{ id: 'h', title: '재량휴업일', start: '2026-09-07', end: '2026-09-07', source: 'manual' }];
+  it('목요일 휴업으로 벌어진 격차를 같은 모양의 요일 교체로 메운다', () => {
+    const events: CalEvent[] = [{ id: 'h', title: '재량휴업일', start: '2026-09-10', end: '2026-09-10', source: 'manual' }];
     const l = ledger(events);
     const r = suggest(l);
-    expect(r.list.length).toBeGreaterThan(0);
     expect(r.list[0].type).toBe('dayswap');
-    expect(r.final.deficitHours).toBeLessThan(r.base.deficitHours);
+    expect(r.list[0].title).toContain('목요일 시간표');
+    const last = (a: number[]) => a[a.length - 1];
+    expect(last(r.final.spreadByCheckpoint)).toBeLessThan(last(r.base.spreadByCheckpoint));
+    expect(r.final.deficitHours).toBeLessThanOrEqual(r.base.deficitHours);
     // 제안을 실제 일정으로 넣으면 같은 결과
     const applied = ledger([...events, r.list[0].addEvent!]);
     expect(r.list[0].after.deficitHours).toBe(
@@ -238,6 +240,12 @@ describe('보완 제안', () => {
         .flatMap(([c, w]) => Object.entries(w).filter(([s]) => s !== '창체').map(([s, n]) => Math.max(0, n * 2 - applied.delivered[c][s])))
         .reduce((a, b) => a + b, 0),
     );
+  });
+
+  it('창체가 있는 요일이나 교시 수가 다른 요일과는 바꾸지 않는다', () => {
+    const r = suggest(ledger([{ id: 'h', title: '재량휴업일', start: '2026-09-07', end: '2026-09-07', source: 'manual' }]), 10);
+    // 수요일(창체 있음)을 끌어들이는 요일 교체는 없어야 한다
+    expect(r.list.filter((x) => x.type === 'dayswap').every((x) => !x.title.includes('수요일') && !x.title.includes('(수)'))).toBe(true);
   });
 });
 
@@ -400,6 +408,17 @@ describe('예시 데이터 전체', () => {
   it('원본의 교사 중복 배정을 찾아낸다', () => {
     const dup = validateTimetable(tt).filter((i) => i.level === 'error');
     expect(dup.length).toBeGreaterThan(0);
+  });
+
+  it('어떤 제안도 격차나 부족 시수를 늘리지 않는다', () => {
+    const l = computeLedger(tt, events, s);
+    const r = suggest(l, 6);
+    expect(r.list.length).toBeGreaterThan(0);
+    for (const x of r.list) {
+      expect(x.after.deficitHours).toBeLessThanOrEqual(x.before.deficitHours);
+      expect(x.after.maxSpread).toBeLessThanOrEqual(x.before.maxSpread);
+      x.after.spreadByCheckpoint.forEach((v, i) => expect(v).toBeLessThanOrEqual(x.before.spreadByCheckpoint[i]));
+    }
   });
 
   it('계산과 제안이 빠르게 끝난다', () => {
