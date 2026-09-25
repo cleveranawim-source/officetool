@@ -34,6 +34,7 @@ export const server = {
   saveState: (json: string) => call<void>('saveState', json),
   fetchPublicIcs: (calendarId: string) => call<string>('fetchPublicIcs', calendarId),
   readTimetableSheet: (url: string) => call<string>('readTimetableSheet', url),
+  readEventSheets: (url: string) => call<{ sheet: string; rows: string[][] }[]>('readEventSheets', url),
 };
 
 export type { Timetable };

@@ -82,6 +82,15 @@ function readTimetableSheet(url) {
     .join('\n');
 }
 
+/** 학사일정 시트: 모든 시트를 보이는 값 그대로 [{sheet, rows}] 로 */
+function readEventSheets(url) {
+  return SpreadsheetApp.openByUrl(url)
+    .getSheets()
+    .map(function (sheet) {
+      return { sheet: sheet.getName(), rows: sheet.getDataRange().getDisplayValues() };
+    });
+}
+
 /* ---------- 공용 설정: 속성 값 하나가 9KB 제한이라 나눠 저장 ---------- */
 var CHUNK = 8000;
 

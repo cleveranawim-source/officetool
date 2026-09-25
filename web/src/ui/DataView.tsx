@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'preact/hooks';
 import { defaultEventsLabel, eventsAreSample } from '@events';
 import { calendarIdFrom, parseICS } from '../engine/ics';
-import { parseEventList } from '../engine/eventList';
+import { describeEventTable, readEventTable, termOf } from '../engine/eventTable';
 import { DEFAULT_RULES, type RuleSet } from '../engine/parseEvents';
-import { download, readTimetableFile } from './files';
+import { download, readEventsFile, readTimetableFile } from './files';
 import { importClassTimetable } from '../engine/importTimetable';
-import { WEEKDAYS } from '../engine/types';
+import { WEEKDAYS, type CalEvent } from '../engine/types';
 import { inAppsScript, server } from './bridge';
 import type { Model } from './store';
 import { Panel, Seg } from './parts';
@@ -17,6 +17,7 @@ export function DataView({ m }: { m: Model }) {
   const [sheetUrl, setSheetUrl] = useState('');
   const [calInput, setCalInput] = useState(m.p.calendarId ?? '');
   const [listText, setListText] = useState('');
+  const [evSheetUrl, setEvSheetUrl] = useState('');
   const [msg, setMsg] = useState('');
   const [cals, setCals] = useState<{ id: string; name: string }[]>([]);
   const gas = inAppsScript();
@@ -46,12 +47,49 @@ export function DataView({ m }: { m: Model }) {
     }
   };
 
-  const onIcs = async (e: Event) => {
+  const inTerm = (e: { start: string; end: string }) => e.end >= s.termStart && e.start <= s.termEnd;
+  const applyEvents = (events: CalEvent[], text: string) => {
+    m.set({ events, eventSource: 'ics', applied: [], overrides: {} });
+    setMsg(text);
+  };
+
+  const onEventFile = async (e: Event) => {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (!f) return;
-    const events = parseICS(await f.text(), s.termEnd).filter((e) => e.end >= s.termStart && e.start <= s.termEnd);
-    m.set({ events, eventSource: 'ics', applied: [], overrides: {} });
-    setMsg(`${f.name}에서 일정 ${events.length}건을 읽었습니다.`);
+    try {
+      const r = await readEventsFile(f, { ...termOf(s.termStart), termEnd: s.termEnd });
+      const events = r.events.filter(inTerm);
+      applyEvents(
+        events,
+        r.format === 'ics'
+          ? `${f.name}에서 일정 ${events.length}건을 읽었습니다.`
+          : `${f.name}${r.sheet ? ` "${r.sheet}" 시트` : ''}: ${describeEventTable(r.format, r.events.length, events.length, r.days)}`,
+      );
+    } catch (err) {
+      setMsg((err as Error).message);
+    }
+  };
+
+  const readEventPaste = () => {
+    const r = readEventTable(listText, termOf(s.termStart));
+    if (!r.events.length) return setMsg('표에서 날짜를 찾지 못했습니다. 목록형(날짜 | 일정)이나 월~금 머리글이 있는 달력형 표를 붙여 넣으세요.');
+    const events = r.events.filter(inTerm);
+    applyEvents(events, describeEventTable(r.format, r.events.length, events.length, r.days));
+  };
+
+  const readEventSheet = async () => {
+    try {
+      setMsg('시트를 읽는 중…');
+      const sheets = await server.readEventSheets(evSheetUrl);
+      const best = sheets
+        .map((sh) => ({ sheet: sh.sheet, r: readEventTable(sh.rows, termOf(s.termStart)) }))
+        .sort((a, b) => b.r.events.length - a.r.events.length)[0];
+      if (!best || !best.r.events.length) return setMsg('시트에서 일정을 찾지 못했습니다.');
+      const events = best.r.events.filter(inTerm);
+      applyEvents(events, `"${best.sheet}" 시트: ${describeEventTable(best.r.format, best.r.events.length, events.length, best.r.days)}`);
+    } catch (err) {
+      setMsg(`시트를 읽지 못했습니다: ${(err as Error).message}`);
+    }
   };
 
   const fetchCalendar = async (raw: string) => {
@@ -88,7 +126,7 @@ export function DataView({ m }: { m: Model }) {
               onChange={(v) => m.set({ eventSource: v, applied: [] })}
               options={[
                 { value: 'sample', label: defaultEventsLabel },
-                { value: 'ics', label: '.ics 파일' },
+                { value: 'ics', label: '파일·시트' },
                 { value: 'calendar', label: '구글 캘린더' },
               ]}
             />
@@ -99,29 +137,38 @@ export function DataView({ m }: { m: Model }) {
             )}
             {m.p.eventSource === 'ics' && (
               <label class="field">
-                구글 캘린더 → 설정 → 가져오기/내보내기에서 받은 .ics 파일
-                <input class="input" type="file" id="ics-file" accept=".ics,text/calendar" onChange={onIcs} />
+                구글 캘린더의 .ics 파일, 또는 학사일정 시트를 .xlsx로 받은 파일 (목록형·달력형 모두)
+                <input class="input" type="file" id="ics-file" accept=".ics,text/calendar,.xlsx,.csv,.tsv,.txt" onChange={onEventFile} />
               </label>
             )}
             {m.p.eventSource === 'ics' && (
               <details>
-                <summary>또는 시트의 일정 목록 붙여넣기 (날짜 + 일정 이름)</summary>
+                <summary>또는 시트의 학사일정 표 붙여넣기 (목록형·달력형)</summary>
                 <div class="stack" style={{ marginTop: '8px' }}>
-                  <textarea class="input" id="list-paste" rows={4} value={listText} onInput={(e) => setListText((e.target as HTMLTextAreaElement).value)} placeholder={'2026-10-07\t(1,2학년) 중간고사\n11/5\t진로교육 1-7'} />
-                  <button
-                    class="btn"
-                    style={{ alignSelf: 'flex-start' }}
-                    disabled={!listText.trim()}
-                    onClick={() => {
-                      const ev = parseEventList(listText, Number(s.termStart.slice(0, 4))).filter((e) => e.end >= s.termStart && e.start <= s.termEnd);
-                      m.set({ events: ev, eventSource: 'ics', applied: [], overrides: {} });
-                      setMsg(`목록에서 일정 ${ev.length}건을 읽었습니다.`);
-                    }}
-                  >
-                    목록 읽기
+                  <textarea
+                    class="input"
+                    id="list-paste"
+                    rows={4}
+                    value={listText}
+                    onInput={(e) => setListText((e.target as HTMLTextAreaElement).value)}
+                    placeholder={'목록형:  2026-10-07\t(1,2학년) 중간고사\n달력형:  월\t주\t월\t화\t수\t목\t금 … (표 전체 복사)'}
+                  />
+                  <button class="btn" style={{ alignSelf: 'flex-start' }} disabled={!listText.trim()} onClick={readEventPaste}>
+                    표 읽기
                   </button>
                 </div>
               </details>
+            )}
+            {m.p.eventSource === 'ics' && gas && (
+              <div class="row" style={{ alignItems: 'flex-end' }}>
+                <label class="field" style={{ flex: 1 }}>
+                  학사일정 구글 시트 주소
+                  <input class="input" id="event-sheet-url" value={evSheetUrl} onInput={(e) => setEvSheetUrl((e.target as HTMLInputElement).value)} placeholder="https://docs.google.com/spreadsheets/d/…" />
+                </label>
+                <button class="btn" onClick={readEventSheet} disabled={!evSheetUrl.trim()}>
+                  시트 읽기
+                </button>
+              </div>
             )}
             {m.p.eventSource === 'calendar' &&
               (gas ? (

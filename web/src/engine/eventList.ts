@@ -35,8 +35,12 @@ function parseDateCell(cell: string, year: number): { start: string; end: string
 }
 
 export function parseEventList(text: string, year: number): CalEvent[] {
+  return parseEventRows(splitRows(text), year);
+}
+
+export function parseEventRows(rows: string[][], year: number): CalEvent[] {
   const out: CalEvent[] = [];
-  for (const row of splitRows(text)) {
+  for (const row of rows) {
     let date: { start: string; end: string } | null = null;
     let di = -1;
     for (let i = 0; i < row.length && !date; i++) {

@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'preact/hooks';
 import { computeLedger, weeklyCounts } from '../engine/compute';
 import { fmtShort } from '../engine/dates';
-import { parseEventList } from '../engine/eventList';
+import { describeEventTable, readEventTable } from '../engine/eventTable';
 import { mergeHolidays } from '../engine/holidays';
-import { parseICS } from '../engine/ics';
 import { importClassTimetable, type ImportResult } from '../engine/importTimetable';
 import { parseEvents } from '../engine/parseEvents';
 import { anonymizeTeachers } from '../engine/privacy';
@@ -11,7 +10,7 @@ import { isAcademic, sortSubjects } from '../engine/subjects';
 import type { CalEvent, EventKind, EventRule, Settings } from '../engine/types';
 import { WEEKDAYS } from '../engine/types';
 import { validateTimetable } from '../engine/validate';
-import { readTimetableFile } from './files';
+import { readEventsFile, readTimetableFile } from './files';
 import { BrandMark, KIND_LABEL, KindTag, Seg } from './parts';
 import type { Model, SchoolInfo } from './store';
 
@@ -34,7 +33,7 @@ export function Setup({ m }: { m: Model }) {
   const [tt, setTt] = useState<(ImportResult & { sheet?: string }) | null>(null);
   const [hideNames, setHideNames] = useState(false);
   const [events, setEvents] = useState<CalEvent[] | null>(null);
-  const [evSource, setEvSource] = useState<'ics' | 'list' | 'skip'>('ics');
+  const [evSource, setEvSource] = useState<'ics' | 'sheet' | 'skip'>('ics');
   const [overrides, setOverrides] = useState<Record<string, Partial<EventRule>>>({});
 
   const term = `${school.year}학년도 ${school.semester}학기`;
@@ -440,34 +439,40 @@ function StepEvents({
   settings: Settings;
   year: number;
   semester: 1 | 2;
-  source: 'ics' | 'list' | 'skip';
-  setSource: (s: 'ics' | 'list' | 'skip') => void;
+  source: 'ics' | 'sheet' | 'skip';
+  setSource: (s: 'ics' | 'sheet' | 'skip') => void;
   events: CalEvent[] | null;
   setEvents: (e: CalEvent[] | null) => void;
 }) {
   const [err, setErr] = useState('');
+  const [note, setNote] = useState('');
   const [paste, setPaste] = useState('');
   const inTerm = (e: CalEvent) => e.end >= settings.termStart && e.start <= settings.termEnd;
 
-  const onIcs = async (f: File | undefined) => {
+  const onFile = async (f: File | undefined) => {
     if (!f) return;
     setErr('');
+    setNote('');
     try {
-      const all = parseICS(await f.text(), settings.termEnd);
-      const ev = all.filter(inTerm);
-      if (!all.length) throw new Error('이 파일에서 일정을 찾지 못했습니다. 구글 캘린더에서 받은 .ics 파일인지 확인하세요.');
+      const r = await readEventsFile(f, { year, semester, termEnd: settings.termEnd });
+      const ev = r.events.filter(inTerm);
+      if (r.format !== 'ics') setNote(`${r.sheet ? `"${r.sheet}" 시트, ` : ''}${describeEventTable(r.format, r.events.length, ev.length, r.days)}`);
       setEvents(ev);
     } catch (e) {
       setErr((e as Error).message);
     }
   };
-  const onList = () => {
+  const onPaste = () => {
     setErr('');
-    const ev = parseEventList(paste, year).map((e) =>
-      semester === 2 && Number(e.start.slice(5, 7)) < 3 ? { ...e, start: `${year + 1}${e.start.slice(4)}`, end: `${year + 1}${e.end.slice(4)}` } : e,
-    );
-    if (!ev.length) setErr('날짜를 찾지 못했습니다. 한 줄에 날짜와 일정 이름이 있게 붙여 넣으세요.');
-    setEvents(ev.filter(inTerm));
+    const r = readEventTable(paste, { year, semester });
+    const ev = r.events.filter(inTerm);
+    if (!r.events.length) {
+      setNote('');
+      setErr('날짜를 찾지 못했습니다. 목록형은 한 줄에 날짜와 일정 이름이, 달력형은 월·화·수·목·금 머리글과 날짜 줄이 있어야 합니다.');
+      return;
+    }
+    setNote(describeEventTable(r.format, r.events.length, ev.length, r.days));
+    setEvents(ev);
   };
 
   return (
@@ -481,11 +486,12 @@ function StepEvents({
         value={source}
         onChange={(v) => {
           setSource(v);
+          setNote('');
           setEvents(v === 'skip' ? [] : null);
         }}
         options={[
           { value: 'ics', label: '구글 캘린더' },
-          { value: 'list', label: '시트 목록 붙여넣기' },
+          { value: 'sheet', label: '구글 시트·엑셀' },
           { value: 'skip', label: '나중에 넣기' },
         ]}
       />
@@ -499,25 +505,43 @@ function StepEvents({
             <li>새 탭 주소창에 붙여 넣으면 <code class="inline">.ics</code> 파일이 내려받아집니다</li>
             <li>그 파일을 오른쪽에 올리기</li>
           </ol>
-          <label class="dropzone" onDragOver={(e) => e.preventDefault()} onDrop={(e) => (e.preventDefault(), onIcs(e.dataTransfer?.files[0]))}>
-            <input type="file" id="setup-ics" accept=".ics,text/calendar" onChange={(e) => onIcs((e.target as HTMLInputElement).files?.[0])} />
+          <label class="dropzone" onDragOver={(e) => e.preventDefault()} onDrop={(e) => (e.preventDefault(), onFile(e.dataTransfer?.files[0]))}>
+            <input type="file" id="setup-ics" accept=".ics,text/calendar" onChange={(e) => onFile((e.target as HTMLInputElement).files?.[0])} />
             <b>.ics 파일 올리기</b>
             <span>끌어다 놓거나 눌러서 고르기</span>
           </label>
         </div>
       )}
-      {source === 'list' && (
+      {source === 'sheet' && (
         <div class="stack">
+          <div class="grid-2">
+            <ol class="howto">
+              <li>
+                목록형(<b>날짜 | 일정</b>)도, 달력형(<b>월·화·수·목·금</b> 칸에 날짜와 일정)도 됩니다. 어느 모양인지는 알아서 판단합니다
+              </li>
+              <li>
+                구글 시트에서 <b>파일 → 다운로드 → Microsoft Excel(.xlsx)</b>로 받아 오른쪽에 올리거나
+              </li>
+              <li>
+                표 전체를 선택(<b>Ctrl+A</b>)해 복사한 뒤 아래 칸에 붙여 넣기
+              </li>
+            </ol>
+            <label class="dropzone" onDragOver={(e) => e.preventDefault()} onDrop={(e) => (e.preventDefault(), onFile(e.dataTransfer?.files[0]))}>
+              <input type="file" id="setup-sheet" accept=".xlsx,.csv,.tsv,.txt" onChange={(e) => onFile((e.target as HTMLInputElement).files?.[0])} />
+              <b>.xlsx 파일 올리기</b>
+              <span>끌어다 놓거나 눌러서 고르기</span>
+            </label>
+          </div>
           <textarea
             class="input"
             id="setup-list"
-            rows={7}
+            rows={6}
             value={paste}
             onInput={(e) => setPaste((e.target as HTMLTextAreaElement).value)}
-            placeholder={'날짜와 일정 이름이 있는 줄을 그대로 붙여 넣으세요.\n2026-10-07\t(1,2학년) 중간고사\n10/13~15\t2학년 수련회\n11/5\t진로교육 1-7'}
+            placeholder={'시트에서 복사한 표를 그대로 붙여 넣으세요.\n목록형:  2026-10-07\t(1,2학년) 중간고사\n달력형:  월\t주\t월\t화\t수\t목\t금 …'}
           />
-          <button class="btn" style={{ alignSelf: 'flex-start' }} onClick={onList} disabled={!paste.trim()}>
-            목록 읽기
+          <button class="btn" style={{ alignSelf: 'flex-start' }} onClick={onPaste} disabled={!paste.trim()}>
+            표 읽기
           </button>
         </div>
       )}
@@ -531,6 +555,7 @@ function StepEvents({
           <b>
             학기 안 일정 {events.length}건을 읽었습니다 ({fmtShort(settings.termStart)} ~ {fmtShort(settings.termEnd)})
           </b>
+          {note && <div class="small">{note}</div>}
           <div class="small muted">
             {events
               .slice(0, 8)

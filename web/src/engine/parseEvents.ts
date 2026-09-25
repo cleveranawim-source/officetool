@@ -50,7 +50,7 @@ export function isMovable(title: string, rules: RuleSet = DEFAULT_RULES): boolea
   return !findWord(title, rules.fixed);
 }
 
-const DAYSWAP = /([월화수목금])요일?\s*시간표/;
+const DAYSWAP = /([월화수목금])요일\s*(?:시간표|수업)|([월화수목금])\s*시간표/;
 const VACATION = /방학(?!\s*식)/;
 /** "6(1)" 교시 교환 */
 const SWAP = /(?:^|[^\d])([1-9])\s*\(\s*([1-9])\s*\)/;
@@ -59,9 +59,9 @@ const SWAP = /(?:^|[^\d])([1-9])\s*\(\s*([1-9])\s*\)/;
 const SUFFIX_RANGE = /(?:^|[^\d-])([1-9])\s*[-~]\s*([1-9])\s*(?:교시)?\s*$/;
 const SUFFIX_ONE = /(?:^|[^\d])([1-9])\s*(?:교시)?\s*$/;
 /** 앞에 붙은 교시: "1-7 백마페스티벌", "3감염병예방교육". 1학년·2학기 같은 표현은 제외 */
-const PREFIX = /^([1-9])(?:\s*[-~]\s*([1-9]))?\s*(?:교시)?(?!\s*(?:학년|학기|반|차|회|월|일|시|명|번|기|개월))(?![\d,.·])\s*(?=[가-힣A-Za-z]|[1-3]\s*학년)/;
+const PREFIX = /^([1-9])(?:\s*[-~]\s*([1-9]))?\s*(?:교시)?(?!\s*(?:학년|학기|년|반|차|회|월|일|시|명|번|기|개월))(?![\d,.·])\s*(?=[가-힣A-Za-z]|[1-3]\s*학년)/;
 
-const GRADES = /((?:[1-3]\s*[,·~]\s*)*[1-3])\s*학년/;
+const GRADES = /(?<!\d)((?:[1-3]\s*[,·~]\s*)*[1-3])\s*학?년(?!도)/;
 const CLASSES = /([1-3])\s*-\s*(\d{1,2})\s*반/g;
 const WHOLE = /(전\s*학년|전교|전체)/;
 const TIME = /(?:오전|오후)\s*\d{1,2}\s*(?::\s*\d{2}|시(?:\s*\d{1,2}\s*분)?)?|\b\d{1,2}:\d{2}\b/g;
@@ -96,7 +96,9 @@ function parseScope(title: string): Pick<EventRule, 'grades' | 'classes'> {
 function cleanParens(title: string): { text: string; removed: string[] } {
   const removed: string[] = [];
   const text = title.replace(/\(([^)]*)\)/g, (_m, inner: string) => {
-    if (/[1-3]\s*학년/.test(inner)) return ` ${inner} `;
+    if (/(?<!\d)[1-3]\s*학?년(?!도)/.test(inner)) return ` ${inner} `;
+    // "아동학대예방교육(6)", "정서행동특성검사(4교시)": 괄호 속 교시
+    if (/^\s*[1-9](?:\s*[-~]\s*[1-9])?\s*(?:교시)?\s*$/.test(inner)) return ` ${inner.trim()}`;
     removed.push(inner.trim());
     return ' ';
   });
@@ -157,8 +159,9 @@ export function classifyTitle(rawTitle: string, rules: RuleSet = DEFAULT_RULES):
 
   const swap = title.match(DAYSWAP);
   if (swap) {
-    const idx = WEEKDAYS.indexOf(swap[1] as (typeof WEEKDAYS)[number]);
-    return { kind: 'dayswap', swapTo: idx, ...scope, label: `${swap[1]}요일 시간표 운영`, confidence: 'high', reason: `"${swap[0]}" 표기` };
+    const ch = swap[1] ?? swap[2];
+    const idx = WEEKDAYS.indexOf(ch as (typeof WEEKDAYS)[number]);
+    return { kind: 'dayswap', swapTo: idx, ...scope, label: `${ch}요일 시간표 운영`, confidence: 'high', reason: `"${swap[0]}" 표기` };
   }
 
   const hol = findWord(title, rules.holiday);

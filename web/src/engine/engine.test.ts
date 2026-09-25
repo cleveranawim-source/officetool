@@ -8,6 +8,8 @@ import { suggest } from './suggest';
 import { mergeHolidays } from './holidays';
 import { anonymizeTeachers } from './privacy';
 import { parseEventList } from './eventList';
+import { looksLikeCalendarGrid, parseCalendarGrid } from './calendarGrid';
+import { readEventTable, termOf } from './eventTable';
 import type { CalEvent, Settings, Timetable } from './types';
 import sample from '../data/sample-timetable.json';
 import { sampleEvents } from '../data/sampleEvents';
@@ -392,6 +394,88 @@ describe('개인정보와 목록형 일정', () => {
       ['2026-11-05', '2026-11-05', '진로교육 1-7'],
       ['2026-11-20', '2026-11-20', '재량휴업일'],
     ]);
+  });
+});
+
+describe('달력형 학사일정', () => {
+  // 실제 학교 학사일정표 모양: 월 | 주 | 월~금(교시 수) | 토, 날짜 줄 아래 일정 줄
+  const T = (...cells: string[]) => cells.join('\t');
+  const sheet = [
+    T('2024학년도 1학기 학사일정'),
+    T('월', '주', '월(6교시)', '화(7교시)', '수(6교시)', '목(7교시)', '금(6교시)', '토'),
+    T('3', '', '4', '5♥1', '6', '7♠1', '8♣1', '9 (1년)입학식1-4'),
+    T('', '1', '(2,3년)개학식1', '(1학년)자유학기제OT', '6(1)', '', '', ''),
+    T('', '', '교직원예배', '', '', '', '', ''),
+    T('', '4', '25', '26♥3', '27', '28', '29♣4', '30'),
+    T('', '', '', '6(5)', '"진로탐색1-7\n부장회의"', '', '', ''),
+    T('4', '5', '1', '2♥4', '3', '4♠4', '5♣5', '6'),
+    T('', '', '교직원예배', '', '', '', '학부모공개수업2-3', ''),
+    T('수업일', '', '19', '21', '18', '19', '19', ''),
+    T('2024학년도 2학기 학사일정'),
+    T('월', '주', '월', '화', '수', '목', '금', '토'),
+    T('12', '20', '23', '24', '25', '26', '27', '28'),
+    T('', '', '학급자치회의', '크리스마스 페스티벌2-4', '성탄절', '', '', ''),
+    T('', '21', '30', '31', '1', '2', '3', '4'),
+    T('', '', '교직원예배', '', '신정', '아동학대예방교육(6)', '수요일 수업', ''),
+  ].join('\n');
+
+  it('달력형인지 알아본다', () => {
+    expect(looksLikeCalendarGrid(sheet.split('\n').map((l) => l.split('\t')))).toBe(true);
+    expect(looksLikeCalendarGrid([['2026-10-07', '중간고사']])).toBe(false);
+  });
+
+  it('날짜와 일정을 읽는다 (달 바뀜·해 바뀜·표시 기호)', () => {
+    const r = parseCalendarGrid(sheet, { year: 2024, semester: 1 });
+    const got = r.events.map((e) => `${e.start} ${e.title}`);
+    expect(got).toEqual([
+      '2024-03-04 (2,3년)개학식1',
+      '2024-03-04 교직원예배',
+      '2024-03-05 (1학년)자유학기제OT',
+      '2024-03-06 6(1)',
+      '2024-03-26 6(5)',
+      '2024-03-27 진로탐색1-7',
+      '2024-03-27 부장회의',
+      '2024-04-01 교직원예배',
+      '2024-04-05 학부모공개수업2-3',
+      '2024-12-23 학급자치회의',
+      '2024-12-24 크리스마스 페스티벌2-4',
+      '2024-12-25 성탄절',
+      '2024-12-30 교직원예배',
+      '2025-01-01 신정',
+      '2025-01-02 아동학대예방교육(6)',
+      '2025-01-03 수요일 수업',
+    ]);
+  });
+
+  it('달력형에서 온 표기도 규칙으로 읽는다', () => {
+    expect(classifyTitle('(2,3년)개학식1')).toMatchObject({ kind: 'periods', periods: [1], grades: [2, 3] });
+    expect(classifyTitle('(1년)보건1-3')).toMatchObject({ kind: 'periods', periods: [1, 2, 3], grades: [1] });
+    expect(classifyTitle('아동학대예방교육(6)')).toMatchObject({ kind: 'periods', periods: [6] });
+    expect(classifyTitle('정서행동특성검사(4교시)')).toMatchObject({ kind: 'periods', periods: [4] });
+    expect(classifyTitle('수요일 수업')).toMatchObject({ kind: 'dayswap', swapTo: 2 });
+    expect(classifyTitle('2024학년도 학사일정').grades).toBeUndefined();
+  });
+
+  it('엑셀 날짜 값으로 된 칸도 읽는다', () => {
+    const rows = [
+      ['월', '주', '월', '화', '수', '목', '금'],
+      ['9', '', '2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02'],
+      ['', '', '', '진로교육1-7', '', '', '(1학년)수련회'],
+      ['', '5', '5', '6', '7', '8', '9'],
+      ['', '', '', '', '', '', '개교기념일'],
+    ];
+    const r = parseCalendarGrid(rows, { year: 2026, semester: 2 });
+    expect(r.events.map((e) => `${e.start} ${e.title}`)).toEqual(['2026-09-29 진로교육1-7', '2026-10-02 (1학년)수련회', '2026-10-09 개교기념일']);
+  });
+
+  it('붙여넣은 표가 목록형인지 달력형인지 알아서 고른다', () => {
+    const grid = readEventTable(sheet, { year: 2024, semester: 1 });
+    expect(grid.format).toBe('grid');
+    expect(grid.events.length).toBe(16);
+    const list = readEventTable('1/5\t겨울방학\n12/24\t종업식', { year: 2026, semester: 2 });
+    expect(list.format).toBe('list');
+    expect(list.events.map((e) => e.start)).toEqual(['2027-01-05', '2026-12-24']);
+    expect(termOf('2026-08-18')).toEqual({ year: 2026, semester: 2 });
   });
 });
 
