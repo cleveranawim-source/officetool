@@ -61,7 +61,7 @@ const PERIOD = /^([1-9])(?:\s*교시)?$/;
 
 export interface ImportResult {
   timetable: Timetable;
-  layout: 'wide' | 'blocks';
+  layout: 'wide' | 'blocks' | 'neis';
   warnings: string[];
 }
 

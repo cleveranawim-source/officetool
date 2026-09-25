@@ -1,5 +1,6 @@
-import { weekdayIndex } from './dates';
-import type { CalEvent } from './types';
+import { addDays, weekdayIndex } from './dates';
+import type { ImportResult } from './importTimetable';
+import type { CalEvent, ClassTimetable, Slot } from './types';
 
 /**
  * NEIS 교육정보 개방 포털(open.neis.go.kr) 학교 검색·학사일정.
@@ -21,7 +22,9 @@ export interface NeisSchool {
 
 export type NeisRow = Record<string, string | null | undefined>;
 
-export function neisUrl(service: 'schoolInfo' | 'SchoolSchedule', params: Record<string, string | number>, key?: string): string {
+export type NeisService = 'schoolInfo' | 'SchoolSchedule' | 'elsTimetable' | 'misTimetable' | 'hisTimetable';
+
+export function neisUrl(service: NeisService, params: Record<string, string | number>, key?: string): string {
   const q = new URLSearchParams({ Type: 'json', pIndex: '1', pSize: key ? '1000' : '5' });
   if (key) q.set('KEY', key.trim());
   for (const [k, v] of Object.entries(params)) q.set(k, String(v));
@@ -114,4 +117,100 @@ export function neisScheduleToEvents(rows: NeisRow[], grades = 3): CalEvent[] {
 /** 학교급에 맞는 학년 수 */
 export function gradesFor(kind: string): number {
   return /초등/.test(kind) ? 6 : 3;
+}
+
+/* ---------- 시간표 ---------- */
+
+/** 학교급별 시간표 서비스 */
+export function timetableService(kind: string): 'elsTimetable' | 'misTimetable' | 'hisTimetable' {
+  if (/초등/.test(kind)) return 'elsTimetable';
+  if (/고등/.test(kind)) return 'hisTimetable';
+  return 'misTimetable';
+}
+
+/**
+ * 시간표를 받을 기간: 평소 시간표를 뽑으려고 몇 주를 받는다.
+ * 오늘이 학기 중이면 지난 몇 주(이미 운영한 시간표), 아니면 개학 둘째 주부터.
+ */
+export function timetableRange(termStart: string, termEnd: string, today: string, weeks = 3): { from: string; to: string } {
+  const monday = (d: string) => addDays(d, -Math.min(weekdayIndex(d), 6));
+  const days = weeks * 7;
+  const lastMon = monday(today);
+  if (today <= termEnd && addDays(lastMon, -days) >= termStart) return { from: addDays(lastMon, -days), to: addDays(lastMon, -3) };
+  const from = addDays(monday(termStart), 7);
+  return { from, to: addDays(from, days - 3) };
+}
+
+/** NEIS 시간표 과목명 정리: 앞뒤 공백·기호, 빈 칸 표시 */
+function subjectName(raw: string | null | undefined): string {
+  const s = (raw ?? '').replace(/\s+/g, ' ').replace(/^[-*·\s]+|[-*·\s]+$/g, '').trim();
+  return s === '' || /^없음$/.test(s) ? '' : s;
+}
+
+export interface NeisTimetableResult extends ImportResult {
+  /** 시간표가 있던 날 수 */
+  dates: number;
+  /** 주마다 과목이 달라 가장 많이 나온 과목으로 정한 칸 수 */
+  varied: number;
+}
+
+/**
+ * NEIS 날짜별 시간표 → 요일별 평소 시간표.
+ * 반·요일·교시마다 여러 주에서 가장 많이 나온 과목을 쓴다(행사·교체로 바뀐 날은 묻힌다).
+ * NEIS에는 교사 이름이 없어서 교사 칸은 비워 둔다.
+ */
+export function neisTimetable(rows: NeisRow[], school: string, term: string): NeisTimetableResult {
+  // 반 → 요일 → 교시 → 과목별 횟수
+  const tally = new Map<string, { grade: number; cls: number; days: Map<number, Map<number, Map<string, number>>> }>();
+  const dates = new Set<string>();
+  for (const r of rows) {
+    const m = (r.ALL_TI_YMD ?? '').match(/^(\d{4})(\d{2})(\d{2})$/);
+    const grade = Number(r.GRADE);
+    const cls = Number(r.CLASS_NM ?? r.CLRM_NM);
+    const perio = Number(r.PERIO);
+    const s = subjectName(r.ITRT_CNTNT);
+    if (!m || !grade || !cls || !perio || !s) continue;
+    const date = `${m[1]}-${m[2]}-${m[3]}`;
+    const wd = weekdayIndex(date);
+    if (wd > 4) continue;
+    dates.add(date);
+    const id = `${grade}-${cls}`;
+    const c = tally.get(id) ?? { grade, cls, days: new Map() };
+    tally.set(id, c);
+    const day = c.days.get(wd) ?? new Map();
+    c.days.set(wd, day);
+    const cell = day.get(perio) ?? new Map();
+    day.set(perio, cell);
+    cell.set(s, (cell.get(s) ?? 0) + 1);
+  }
+  if (!tally.size) throw new Error('NEIS에 이 기간 시간표가 없습니다. 학교가 NEIS에 시간표를 올렸는지 확인하거나 기간을 바꿔 보세요.');
+
+  const warnings: string[] = [];
+  let varied = 0;
+  const days = [0, 0, 0, 0, 0];
+  const classes: ClassTimetable[] = [...tally.entries()]
+    .sort((a, b) => a[1].grade - b[1].grade || a[1].cls - b[1].cls)
+    .map(([id, c]) => {
+      const week: Slot[][] = [0, 1, 2, 3, 4].map((wd) => {
+        const day = c.days.get(wd);
+        if (!day) {
+          warnings.push(`${id} ${'월화수목금'[wd]}요일: 받은 기간에 시간표가 없음`);
+          return [];
+        }
+        const last = Math.max(...day.keys());
+        days[wd] = Math.max(days[wd], last);
+        return Array.from({ length: last }, (_, i) => {
+          const cell = day.get(i + 1);
+          if (!cell) {
+            warnings.push(`${id} ${'월화수목금'[wd]} ${i + 1}교시: 비어 있음`);
+            return { s: '', t: '' };
+          }
+          const sorted = [...cell.entries()].sort((a, b) => b[1] - a[1]);
+          if (sorted.length > 1) varied++;
+          return { s: sorted[0][0], t: '' };
+        });
+      });
+      return { id, grade: c.grade, week };
+    });
+  return { timetable: { school, term, days, classes }, layout: 'neis', warnings, dates: dates.size, varied };
 }

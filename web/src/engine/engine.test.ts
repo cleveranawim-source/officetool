@@ -10,7 +10,7 @@ import { anonymizeTeachers } from './privacy';
 import { parseEventList } from './eventList';
 import { looksLikeCalendarGrid, parseCalendarGrid } from './calendarGrid';
 import { readEventTable, termOf } from './eventTable';
-import { neisRows, neisScheduleToEvents, neisUrl, toSchools } from './neis';
+import { neisRows, neisScheduleToEvents, neisTimetable, neisUrl, timetableRange, timetableService, toSchools } from './neis';
 import type { CalEvent, Settings, Timetable } from './types';
 import sample from '../data/sample-timetable.json';
 import { sampleEvents } from '../data/sampleEvents';
@@ -531,6 +531,49 @@ describe('NEIS 학사일정', () => {
     ]);
     expect(classifyTitle(ev[0].title)).toMatchObject({ kind: 'exam', grades: [1, 2] });
     expect(classifyTitle(ev[4].title).kind).toBe('holiday');
+  });
+});
+
+describe('NEIS 시간표', () => {
+  // 3주치 날짜별 시간표: 1-1 월요일 1교시는 국어, 한 주만 행사로 "창체"
+  const rows: Record<string, string>[] = [];
+  const mondays = ['20260907', '20260914', '20260921'];
+  mondays.forEach((mon, w) => {
+    const day = (d: number) => String(Number(mon) + d);
+    for (const cls of ['1', '2'])
+      for (let d = 0; d < 5; d++)
+        for (let p = 1; p <= (d % 2 ? 7 : 6); p++) {
+          let subj = ['국어', '수학', '영어', '과학', '사회', '체육', '음악'][(p + d) % 7];
+          if (d === 0 && p === 1) subj = cls === '1' && w === 1 ? '창체' : '국어';
+          rows.push({ ALL_TI_YMD: day(d), GRADE: '1', CLASS_NM: cls, PERIO: String(p), ITRT_CNTNT: subj });
+        }
+  });
+  rows.push({ ALL_TI_YMD: '20260912', GRADE: '1', CLASS_NM: '1', PERIO: '1', ITRT_CNTNT: '토요 활동' });
+  rows.push({ ALL_TI_YMD: '20260908', GRADE: '1', CLASS_NM: '2', PERIO: '8', ITRT_CNTNT: '-' });
+
+  it('여러 주에서 가장 많이 나온 과목으로 요일별 시간표를 만든다', () => {
+    const r = neisTimetable(rows, '한빛중학교', '2026학년도 2학기');
+    expect(r.layout).toBe('neis');
+    expect(r.timetable.days).toEqual([6, 7, 6, 7, 6]);
+    expect(r.timetable.classes.map((c) => c.id)).toEqual(['1-1', '1-2']);
+    expect(r.timetable.classes[0].week[0][0]).toEqual({ s: '국어', t: '' });
+    expect(r.varied).toBe(1);
+    expect(r.dates).toBe(15);
+    expect(validateTimetable(r.timetable).map((i) => i.title)).toEqual(['교사 정보 없음']);
+  });
+
+  it('자료가 없으면 알려 준다', () => {
+    expect(() => neisTimetable([], 'x', 'y')).toThrow('시간표가 없습니다');
+  });
+
+  it('학교급별 서비스와 받을 기간', () => {
+    expect(timetableService('중학교')).toBe('misTimetable');
+    expect(timetableService('고등학교')).toBe('hisTimetable');
+    expect(timetableService('초등학교')).toBe('elsTimetable');
+    // 학기 중: 지난 3주 (월~금)
+    expect(timetableRange('2026-08-18', '2026-12-31', '2026-09-25')).toEqual({ from: '2026-08-31', to: '2026-09-18' });
+    // 학기 전: 개학 둘째 주부터 3주
+    expect(timetableRange('2026-08-18', '2026-12-31', '2026-08-01')).toEqual({ from: '2026-08-24', to: '2026-09-11' });
   });
 });
 

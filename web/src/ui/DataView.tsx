@@ -174,6 +174,7 @@ export function DataView({ m }: { m: Model }) {
             )}
             {m.p.eventSource === 'neis' && (
               <NeisPanel
+                mode="schedule"
                 defaultName={m.p.school?.name ?? ''}
                 termStart={s.termStart}
                 termEnd={s.termEnd}
@@ -246,6 +247,26 @@ export function DataView({ m }: { m: Model }) {
                 }}
               />
             </label>
+            <details>
+              <summary>NEIS에서 시간표 받기 (교사 이름 없이 과목만)</summary>
+              <div style={{ marginTop: '10px' }}>
+                <NeisPanel
+                  mode="timetable"
+                  defaultName={m.p.school?.name ?? tt.school}
+                  termStart={s.termStart}
+                  termEnd={s.termEnd}
+                  today={s.today}
+                  year={m.p.school?.year ?? termOf(s.termStart).year}
+                  semester={m.p.school?.semester ?? termOf(s.termStart).semester}
+                  term={tt.term}
+                  initial={m.p.neis}
+                  onTimetable={(r, school, text) => {
+                    m.set({ timetable: r.timetable, neis: school, applied: [] });
+                    setMsg(`${r.timetable.classes.length}개 반. ${text}`);
+                  }}
+                />
+              </div>
+            </details>
             {gas && (
               <div class="row" style={{ alignItems: 'flex-end' }}>
                 <label class="field" style={{ flex: 1 }}>

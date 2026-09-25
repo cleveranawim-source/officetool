@@ -59,7 +59,7 @@ const OFF_KINDS: EventKind[] = ['holiday', 'vacation'];
 
 export function weeklyCounts(c: ClassTimetable): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const day of c.week) for (const slot of day) if (slot) out[slot.s] = (out[slot.s] ?? 0) + 1;
+  for (const day of c.week) for (const slot of day) if (slot?.s) out[slot.s] = (out[slot.s] ?? 0) + 1;
   return out;
 }
 
@@ -211,7 +211,8 @@ export function classDay(c: ClassTimetable, wd: number, mine: ParsedEvent[], set
   const lost: ClassDayResult['lost'] = [];
   const full = mine.find((e) => e.rule.kind === 'fullday');
   row.forEach((slot, i) => {
-    if (!slot) return;
+    // 빈 칸(수업 없음)은 시수에도 결손에도 넣지 않는다
+    if (!slot?.s) return;
     const p = i + 1;
     const ev =
       full ??

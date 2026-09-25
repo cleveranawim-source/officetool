@@ -47,7 +47,12 @@ export function validateTimetable(tt: Timetable): Issue[] {
     }
   }
 
-  // 3) 교사 칸이 빈 교과 수업
+  // 3) 교사 칸이 빈 교과 수업 (NEIS처럼 교사 정보가 아예 없는 시간표는 한 번만 알린다)
+  const hasTeachers = tt.classes.some((c) => c.week.some((d) => d.some((s) => s?.t)));
+  if (!hasTeachers) {
+    issues.push({ level: 'warn', title: '교사 정보 없음', detail: '시간표에 담당 교사가 없어 교사 시수와 교사 중복 배정은 볼 수 없습니다. 반·과목 시수 계산에는 지장이 없습니다.' });
+    return issues;
+  }
   for (const c of tt.classes)
     c.week.forEach((day, wd) =>
       day.forEach((slot, i) => {

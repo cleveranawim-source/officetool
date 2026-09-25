@@ -32,7 +32,7 @@ export function Setup({ m }: { m: Model }) {
     ...m.p.settings,
     ...(m.p.school ? {} : termDates(school.year, school.semester)),
   }));
-  const [tt, setTt] = useState<(ImportResult & { sheet?: string }) | null>(null);
+  const [tt, setTt] = useState<(ImportResult & { sheet?: string; note?: string }) | null>(null);
   const [hideNames, setHideNames] = useState(false);
   const [events, setEvents] = useState<CalEvent[] | null>(null);
   const [evSource, setEvSource] = useState<'ics' | 'sheet' | 'neis' | 'skip'>('ics');
@@ -79,7 +79,20 @@ export function Setup({ m }: { m: Model }) {
 
       <main class="setup-card">
         {step === 0 && <StepSchool school={school} setSchool={setSchool} settings={settings} setSettings={setSettings} />}
-        {step === 1 && <StepTimetable tt={tt} setTt={setTt} hideNames={hideNames} setHideNames={setHideNames} school={school.name} term={term} />}
+        {step === 1 && (
+          <StepTimetable
+            tt={tt}
+            setTt={setTt}
+            hideNames={hideNames}
+            setHideNames={setHideNames}
+            school={school.name}
+            term={term}
+            info={school}
+            settings={settings}
+            neisSchool={neisSchool}
+            setNeisSchool={setNeisSchool}
+          />
+        )}
         {step === 2 && (
           <StepEvents
             settings={settings}
@@ -292,14 +305,23 @@ function StepTimetable({
   setHideNames,
   school,
   term,
+  info,
+  settings,
+  neisSchool,
+  setNeisSchool,
 }: {
-  tt: (ImportResult & { sheet?: string }) | null;
-  setTt: (r: (ImportResult & { sheet?: string }) | null) => void;
+  tt: (ImportResult & { sheet?: string; note?: string }) | null;
+  setTt: (r: (ImportResult & { sheet?: string; note?: string }) | null) => void;
   hideNames: boolean;
   setHideNames: (v: boolean) => void;
   school: string;
   term: string;
+  info: SchoolInfo;
+  settings: Settings;
+  neisSchool?: NeisSchool;
+  setNeisSchool: (s: NeisSchool) => void;
 }) {
+  const [src, setSrc] = useState<'file' | 'neis'>(tt?.layout === 'neis' ? 'neis' : 'file');
   const [err, setErr] = useState('');
   const [paste, setPaste] = useState('');
   const [over, setOver] = useState(false);
@@ -335,32 +357,72 @@ function StepTimetable({
         <h2>시간표</h2>
         <p class="muted">시간표 프로그램에서 내려받은 엑셀 파일을 그대로 올리세요. 반마다 한 줄인 표와 반마다 한 칸짜리 표 모두 읽습니다.</p>
       </div>
-      <label
-        class={`dropzone ${over ? 'over' : ''}`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setOver(true);
+      <Seg
+        label="시간표 가져오기"
+        value={src}
+        onChange={(v) => {
+          setSrc(v);
+          setErr('');
         }}
-        onDragLeave={() => setOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setOver(false);
-          onFile(e.dataTransfer?.files[0]);
-        }}
-      >
-        <input type="file" id="tt-file" accept=".xlsx,.csv,.tsv,.txt" onChange={(e) => onFile((e.target as HTMLInputElement).files?.[0])} />
-        <b>{fileName ? fileName : '시간표 엑셀 파일을 끌어다 놓거나 눌러서 고르기'}</b>
-        <span>.xlsx · .csv 파일. "전체 학반 시간표" 또는 "학반별 시간표"</span>
-      </label>
-      <details>
-        <summary>또는 시트에서 복사해 붙여넣기</summary>
-        <div class="stack" style={{ marginTop: '10px' }}>
-          <textarea class="input" id="tt-paste-setup" rows={5} value={paste} onInput={(e) => setPaste((e.target as HTMLTextAreaElement).value)} placeholder="요일 머리글(월·화·수·목·금) 줄부터 마지막 반까지 복사해 붙여 넣으세요." />
-          <button class="btn" style={{ alignSelf: 'flex-start' }} onClick={onPaste} disabled={!paste.trim()}>
-            붙여넣은 표 읽기
-          </button>
+        options={[
+          { value: 'file', label: '엑셀·시트' },
+          { value: 'neis', label: 'NEIS' },
+        ]}
+      />
+      {src === 'neis' && (
+        <div class="stack">
+          <p class="small muted" style={{ margin: 0 }}>
+            학교가 NEIS에 올린 날짜별 시간표를 3주 받아, 반·요일·교시마다 가장 많이 나온 과목으로 평소 시간표를 만듭니다. NEIS에는 교사 이름이 없어 교사 시수 화면은 비고, 영A·영B 같은 분반 이름은 NEIS에 적힌 대로 나옵니다.
+          </p>
+          <NeisPanel
+            mode="timetable"
+            defaultName={school}
+            termStart={settings.termStart}
+            termEnd={settings.termEnd}
+            today={settings.today}
+            year={info.year}
+            semester={info.semester}
+            term={term}
+            initial={neisSchool}
+            onPick={setNeisSchool}
+            onTimetable={(r, s, note) => {
+              setErr('');
+              setNeisSchool(s);
+              setTt({ ...r, note });
+            }}
+          />
         </div>
-      </details>
+      )}
+      {src === 'file' && (
+        <>
+          <label
+            class={`dropzone ${over ? 'over' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setOver(true);
+            }}
+            onDragLeave={() => setOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setOver(false);
+              onFile(e.dataTransfer?.files[0]);
+            }}
+          >
+            <input type="file" id="tt-file" accept=".xlsx,.csv,.tsv,.txt" onChange={(e) => onFile((e.target as HTMLInputElement).files?.[0])} />
+            <b>{fileName ? fileName : '시간표 엑셀 파일을 끌어다 놓거나 눌러서 고르기'}</b>
+            <span>.xlsx · .csv 파일. "전체 학반 시간표" 또는 "학반별 시간표"</span>
+          </label>
+          <details>
+            <summary>또는 시트에서 복사해 붙여넣기</summary>
+            <div class="stack" style={{ marginTop: '10px' }}>
+              <textarea class="input" id="tt-paste-setup" rows={5} value={paste} onInput={(e) => setPaste((e.target as HTMLTextAreaElement).value)} placeholder="요일 머리글(월·화·수·목·금) 줄부터 마지막 반까지 복사해 붙여 넣으세요." />
+              <button class="btn" style={{ alignSelf: 'flex-start' }} onClick={onPaste} disabled={!paste.trim()}>
+                붙여넣은 표 읽기
+              </button>
+            </div>
+          </details>
+        </>
+      )}
 
       {err && (
         <div class="banner" role="alert">
@@ -375,9 +437,10 @@ function StepTimetable({
               {tt.timetable.classes.length}개 반을 읽었습니다{tt.sheet ? ` (시트 "${tt.sheet}")` : ''}
             </b>
             <span class="small muted">
-              {tt.timetable.days.map((n, i) => `${WEEKDAYS[i]}${n}`).join(' ')}교시 · {tt.layout === 'wide' ? '반마다 한 줄' : '반마다 한 칸'} 형식
+              {tt.timetable.days.map((n, i) => `${WEEKDAYS[i]}${n}`).join(' ')}교시 · {tt.layout === 'wide' ? '반마다 한 줄 형식' : tt.layout === 'blocks' ? '반마다 한 칸 형식' : 'NEIS'}
             </span>
           </div>
+          {tt.note && <div class="small">{tt.note}</div>}
           <div class="table-wrap">
             <table class="t">
               <thead>
@@ -431,11 +494,13 @@ function StepTimetable({
               </ul>
             </details>
           )}
-          <label class="switch" style={{ fontWeight: 500 }}>
-            <input type="checkbox" id="hide-names" checked={hideNames} onChange={() => setHideNames(!hideNames)} />
-            <span class="track" />
-            교사 이름 대신 "국어1"처럼 바꿔 저장하기
-          </label>
+          {tt.layout !== 'neis' && (
+            <label class="switch" style={{ fontWeight: 500 }}>
+              <input type="checkbox" id="hide-names" checked={hideNames} onChange={() => setHideNames(!hideNames)} />
+              <span class="track" />
+              교사 이름 대신 "국어1"처럼 바꿔 저장하기
+            </label>
+          )}
         </div>
       )}
     </div>
@@ -542,6 +607,7 @@ function StepEvents({
             학교가 NEIS에 입력한 학사일정을 받습니다. NEIS 일정은 보통 행사 이름만 있고 교시가 없으니, 교시 단위 행사는 확인 단계에서 고치거나 시트·캘린더와 함께 쓰세요.
           </p>
           <NeisPanel
+            mode="schedule"
             defaultName={schoolName}
             termStart={settings.termStart}
             termEnd={settings.termEnd}
