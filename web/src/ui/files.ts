@@ -1,7 +1,7 @@
 import readXlsxFile from 'read-excel-file/browser';
 import { readEventTable, type EventTableResult } from '../engine/eventTable';
 import { parseICS } from '../engine/ics';
-import { importClassTimetable, importRows, type ImportResult } from '../engine/importTimetable';
+import { importClassTimetable, importRows, splitRows, type ImportResult } from '../engine/importTimetable';
 
 /** 엑셀 칸 값을 글자로 (날짜 값은 2026-10-07) */
 function cellText(c: unknown): string {
@@ -16,7 +16,7 @@ export type EventFileResult = { format: 'ics' | EventTableResult['format']; even
  * 학사일정 파일을 읽는다: .ics(구글 캘린더), .xlsx·.csv·.tsv(시트에서 받은 목록형·달력형 표).
  * 엑셀은 모든 시트를 읽어 일정이 가장 많이 나온 시트를 쓴다.
  */
-export async function readEventsFile(file: File, opts: { year: number; semester: 1 | 2; termEnd: string }): Promise<EventFileResult> {
+export async function readEventsFile(file: File, opts: { year: number; semester: 1 | 2; termEnd: string; wholeYear?: boolean }): Promise<EventFileResult> {
   if (/\.ics$/i.test(file.name) || file.type === 'text/calendar') {
     const events = parseICS(await file.text(), opts.termEnd);
     if (!events.length) throw new Error('이 파일에서 일정을 찾지 못했습니다. 구글 캘린더에서 받은 .ics 파일인지 확인하세요.');
@@ -85,4 +85,14 @@ export function download(filename: string, text: string, type = 'application/jso
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** 표 파일(.xlsx·.csv·.tsv)을 칸 글자 표로. 엑셀은 want를 만족하는 첫 시트(없으면 첫 시트) */
+export async function readRowsFile(file: File, want?: (rows: string[][]) => boolean): Promise<string[][]> {
+  if (/\.xlsx$/i.test(file.name)) {
+    const sheets = await readXlsxFile(file);
+    const all = sheets.map(({ data }) => data.map((row) => row.map(cellText)));
+    return all.find((r) => !want || want(r)) ?? all[0] ?? [];
+  }
+  return splitRows((await file.text()).replace(/^\ufeff/, ''));
 }

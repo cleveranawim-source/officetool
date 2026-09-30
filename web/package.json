@@ -12,6 +12,7 @@
     "build:gas": "vite build && cp dist/index.html ../apps-script/index.html"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
     "preact": "^10.27.0",
     "read-excel-file": "^9.3.10"
   },

@@ -88,6 +88,32 @@ function fetchNeis(url) {
   return UrlFetchApp.fetch(url, { muteHttpExceptions: true }).getContentText('UTF-8');
 }
 
+/**
+ * 학사일정 1차안을 새 구글 시트로 만든다. 교사들이 함께 고친 뒤 앱에서 다시 읽는다.
+ * 날짜는 글자 그대로 두어 시트가 멋대로 바꾸지 않게 한다.
+ */
+function createPlanSheet(title, rows) {
+  var ss = SpreadsheetApp.create(title);
+  var sheet = ss.getSheets()[0];
+  sheet.setName('1차안');
+  var width = rows[0].length;
+  sheet.getRange(1, 1, rows.length, width).setNumberFormat('@').setValues(rows);
+  sheet.setFrozenRows(1);
+  sheet.getRange(1, 1, 1, width).setFontWeight('bold').setBackground('#e6efe9');
+  sheet.setColumnWidths(1, 2, 96);
+  sheet.setColumnWidth(3, 260);
+  sheet.setColumnWidth(4, 80);
+  sheet.setColumnWidth(5, 360);
+  // 확인 필요한 줄을 눈에 띄게
+  var rule = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=$D2="확인 필요"')
+    .setBackground('#fdecc8')
+    .setRanges([sheet.getRange(2, 1, Math.max(1, rows.length - 1), width)])
+    .build();
+  sheet.setConditionalFormatRules([rule]);
+  return ss.getUrl();
+}
+
 /** 학사일정 시트: 모든 시트를 보이는 값 그대로 [{sheet, rows}] 로 */
 function readEventSheets(url) {
   return SpreadsheetApp.openByUrl(url)

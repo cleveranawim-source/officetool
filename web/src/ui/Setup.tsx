@@ -12,6 +12,7 @@ import { WEEKDAYS } from '../engine/types';
 import { validateTimetable } from '../engine/validate';
 import { readEventsFile, readTimetableFile } from './files';
 import { NeisPanel } from './NeisPanel';
+import { SUITE_NAME } from './suite';
 import type { NeisSchool } from '../engine/neis';
 import { BrandMark, KIND_LABEL, KindTag, Seg } from './parts';
 import type { Model, SchoolInfo } from './store';
@@ -34,7 +35,8 @@ export function Setup({ m }: { m: Model }) {
   }));
   const [tt, setTt] = useState<(ImportResult & { sheet?: string; note?: string }) | null>(null);
   const [hideNames, setHideNames] = useState(false);
-  const [events, setEvents] = useState<CalEvent[] | null>(null);
+  // 학사일정 짜기에서 보낸 1차안이 있으면 그대로 쓴다
+  const [events, setEvents] = useState<CalEvent[] | null>(() => (m.p.events?.some((e) => e.source === 'plan') ? m.p.events : null));
   const [evSource, setEvSource] = useState<'ics' | 'sheet' | 'neis' | 'skip'>('ics');
   const [neisSchool, setNeisSchool] = useState<NeisSchool | undefined>(m.p.neis);
   const [overrides, setOverrides] = useState<Record<string, Partial<EventRule>>>({});
@@ -65,7 +67,7 @@ export function Setup({ m }: { m: Model }) {
       <header class="setup-head">
         <div class="brand">
           <BrandMark />
-          <div class="brand-name">시수핏</div>
+          <div class="brand-name">{SUITE_NAME} · 시수 점검</div>
         </div>
         <ol class="steps" aria-label="설정 단계">
           {STEPS.map((s, i) => (
@@ -138,7 +140,8 @@ function Welcome({ onStart, onDemo, hasPrevious, onBack }: { onStart: () => void
       <div class="welcome-inner">
         <div class="brand">
           <BrandMark />
-          <div class="brand-name">시수핏</div>
+          <div class="brand-name">{SUITE_NAME}</div>
+          <span class="chip plain">시수 점검</span>
         </div>
         <h1>
           학사일정 때문에 빠지는 수업,
@@ -180,6 +183,9 @@ function Welcome({ onStart, onDemo, hasPrevious, onBack }: { onStart: () => void
             </button>
           )}
         </div>
+        <a class="welcome-alt" href="#plan">
+          새 학년도 학사일정을 짜려면 <b>학사일정 짜기 →</b>
+        </a>
         <p class="small muted">지금은 중학교를 지원합니다. 고등학교·초등학교는 준비 중입니다.</p>
       </div>
     </div>

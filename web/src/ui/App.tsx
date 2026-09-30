@@ -4,8 +4,10 @@ import { fmtShort } from '../engine/dates';
 import { CalendarView } from './CalendarView';
 import { CellDrawer } from './CellDrawer';
 import { DataView } from './DataView';
-import { BrandMark, Icon, TipProvider } from './parts';
-import { useModel } from './store';
+import { Icon, TipProvider } from './parts';
+import { PlanApp } from './PlanApp';
+import { useModel, type Model } from './store';
+import { AppSwitch, appFromHash, SuiteBrand, type AppId } from './suite';
 import { Setup } from './Setup';
 import { SuggestView } from './SuggestView';
 import { Dashboard, Exams, MatrixPanel, Teachers, type Pick } from './views';
@@ -26,8 +28,19 @@ function readHash(): ViewId {
   return (VIEWS.find((v) => v.id === h)?.id ?? 'dashboard') as ViewId;
 }
 
+/** 교무핏: 도구를 탭(사이드바 맨 위)으로 바꾼다. 도구들은 학교·시간표·일정 자료를 같이 쓴다 */
 export function App() {
   const m = useModel();
+  const [app, setApp] = useState<AppId>(() => appFromHash(typeof location !== 'undefined' ? location.hash : ''));
+  useEffect(() => {
+    const on = () => setApp(appFromHash(location.hash));
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  return app === 'plan' ? <PlanApp m={m} /> : <SisuApp m={m} />;
+}
+
+function SisuApp({ m }: { m: Model }) {
   const [view, setView] = useState<ViewId>(readHash);
   const [pick, setPick] = useState<Pick>(null);
 
@@ -59,14 +72,9 @@ export function App() {
     <TipProvider>
       <div class="shell">
         <aside class="side">
-          <div class="brand">
-            <BrandMark />
-            <div>
-              <div class="brand-name">시수핏</div>
-              <div class="brand-sub">학사일정 시수 균형 점검</div>
-            </div>
-          </div>
-          <nav class="nav" aria-label="화면">
+          <SuiteBrand sub="교무업무 도구" />
+          <AppSwitch current="sisu" />
+          <nav class="nav" aria-label="시수 점검 화면">
             {VIEWS.map((x) => (
               <button key={x.id} aria-current={x.id === view ? 'page' : undefined} onClick={() => go(x.id)}>
                 <x.icon />

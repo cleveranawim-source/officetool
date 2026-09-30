@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { classifyTitle, parseEvents } from './parseEvents';
 import { computeLedger, deliveredBefore, gradeSpreads } from './compute';
 import { importClassTimetable } from './importTimetable';
-import { calendarIdFrom, parseICS } from './ics';
+import { calendarIdFrom, parseICS, toICS } from './ics';
 import { validateTimetable } from './validate';
 import { suggest } from './suggest';
 import { mergeHolidays } from './holidays';
@@ -10,6 +10,9 @@ import { anonymizeTeachers } from './privacy';
 import { parseEventList } from './eventList';
 import { looksLikeCalendarGrid, parseCalendarGrid } from './calendarGrid';
 import { readEventTable, termOf } from './eventTable';
+import { applyOps, checkOps, planContext } from './planAI';
+import { applyPlanRows, planToRows, toCSV } from './planSheet';
+import { detectTerms, makePlan, planConflicts, planStats, suggestTerms } from './planner';
 import { neisRows, neisScheduleToEvents, neisTimetable, neisUrl, timetableRange, timetableService, toSchools } from './neis';
 import type { CalEvent, Settings, Timetable } from './types';
 import sample from '../data/sample-timetable.json';
@@ -574,6 +577,134 @@ describe('NEIS 시간표', () => {
     expect(timetableRange('2026-08-18', '2026-12-31', '2026-09-25')).toEqual({ from: '2026-08-31', to: '2026-09-18' });
     // 학기 전: 개학 둘째 주부터 3주
     expect(timetableRange('2026-08-18', '2026-12-31', '2026-08-01')).toEqual({ from: '2026-08-24', to: '2026-09-11' });
+  });
+});
+
+describe('학사일정 1차안', () => {
+  const ev = (start: string, title: string, end = start): CalEvent => ({ id: `${start}${title}`, title, start, end, source: 'manual' });
+  const last: CalEvent[] = [
+    ev('2026-03-03', '입학식'),
+    ev('2026-03-03', '안전교육2'),
+    ev('2026-04-13', '재량휴업일(개교기념)'),
+    ev('2026-04-27', '중간고사', '2026-04-29'),
+    ev('2026-04-30', '체육대회'),
+    ev('2026-05-04', '재량휴업일'),
+    ev('2026-06-10', '영어듣기평가1-3(학년별)'),
+    ev('2026-07-24', '여름방학식'),
+    ev('2026-08-13', '2학기 개학식'),
+    ev('2026-09-14', '2학년 수련회', '2026-09-16'),
+    ev('2026-11-20', '재량휴업일'),
+    ev('2026-12-31', '종업식'),
+    // 매주 월요일 교직원 회의
+    ...['2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28', '2026-10-05', '2026-10-12'].map((d) => ev(d, '교직원 회의')),
+    ev('2026-10-05', '대체공휴일(개천절)'),
+  ];
+  const plan = makePlan(last, { fromYear: 2026 });
+  const at = (title: string) => plan.items.filter((i) => i.title === title);
+
+  it('작년 학기 경계를 찾고 새 학년도로 옮긴다', () => {
+    expect(detectTerms(last, 2026)).toEqual({ sem1Start: '2026-03-03', sem1End: '2026-07-24', sem2Start: '2026-08-13', sem2End: '2026-12-31' });
+    expect(suggestTerms(plan.lastTerms, 2027)).toEqual({ sem1Start: '2027-03-02', sem1End: '2027-07-23', sem2Start: '2027-08-12', sem2End: '2027-12-31' });
+    // 첫날에 있던 일정은 첫날을 따라간다
+    expect(at('입학식')[0]).toMatchObject({ start: '2027-03-02', status: 'ok' });
+    expect(at('안전교육2')[0].start).toBe('2027-03-02');
+  });
+
+  it('"n째 주 무슨 요일"을 지키고, 시험 다음 날 행사는 시험을 따라간다', () => {
+    expect(at('중간고사')[0]).toMatchObject({ start: '2027-04-26', end: '2027-04-28', status: 'ok' });
+    expect(at('체육대회')[0]).toMatchObject({ start: '2027-04-29' });
+    expect(at('체육대회')[0].anchor).toContain('중간고사');
+  });
+
+  it('개교기념일은 같은 날짜로', () => {
+    expect(at('재량휴업일(개교기념)')[0]).toMatchObject({ start: '2027-04-13', status: 'ok' });
+  });
+
+  it('공휴일과 겹친 큰 일정은 교사 확인으로, 후보를 낸다', () => {
+    const t = at('2학년 수련회')[0];
+    expect(t.status).toBe('check');
+    expect(t.reason).toContain('추석');
+    expect(t.start).not.toBe('2027-09-13');
+    expect(t.alternatives?.length).toBeGreaterThan(0);
+  });
+
+  it('징검다리 재량휴업은 작년 날짜가 아니라 새해 징검다리로 다시 제안한다', () => {
+    const b = plan.items.filter((i) => i.status === 'suggested');
+    expect(b).toHaveLength(1);
+    expect(b[0].start).toBe('2027-05-14'); // 부처님오신날(목) 다음 금요일
+    expect(plan.items.some((i) => i.title === '재량휴업일' && i.from?.start === '2026-05-04')).toBe(false);
+    // 징검다리가 아니던 재량휴업일은 n째 요일로
+    expect(plan.items.find((i) => i.from?.start === '2026-11-20')?.start).toBe('2027-11-19');
+  });
+
+  it('교육청이 정하는 날짜는 확인 필요로', () => {
+    expect(at('영어듣기평가1-3(학년별)')[0].status).toBe('check');
+  });
+
+  it('매주 반복 일정은 다시 펼치고 공휴일은 건너뛴다', () => {
+    const w = at('교직원 회의');
+    expect(w.every((i) => i.series === '교직원 회의')).toBe(true);
+    expect(w.map((i) => i.start)).not.toContain('2027-10-04'); // 대체공휴일(개천절)
+    expect(w.map((i) => i.start)).not.toContain('2027-10-11'); // 대체공휴일(한글날)
+    expect(w[0].start).toBe('2027-09-06');
+  });
+
+  it('수업일수를 세고, 고친 뒤 겹침을 다시 찾는다', () => {
+    const st = planStats(plan.items, plan.terms);
+    expect(st.total).toBe(st.sem1 + st.sem2);
+    expect(st.total).toBeGreaterThan(180);
+    const moved = plan.items.map((i) => (i.title === '중간고사' ? { ...i, start: '2027-05-05', end: '2027-05-07' } : i));
+    const c = planConflicts(moved, plan.terms);
+    expect([...c.values()].join()).toContain('어린이날');
+  });
+
+  it('시트로 내보내고, 고친 시트를 번호로 맞춰 다시 읽는다', () => {
+    const rows = planToRows(plan.items);
+    expect(rows[0]).toEqual(['날짜', '끝 날짜', '일정', '상태', '근거', '작년 날짜', '번호']);
+    expect(toCSV([['a,b', '줄\n바꿈']])).toBe('\ufeff"a,b","줄\n바꿈"');
+    const edited = rows
+      .filter((r) => r[2] !== '체육대회')
+      .map((r) => (r[2] === '2학년 수련회' ? ['2027-09-27', '2027-09-29', ...r.slice(2)] : r));
+    edited.push(['2027-05-20', '', '과학의 날 행사', '', '', '', '']);
+    const res = applyPlanRows(plan.items, edited, 2027);
+    expect(res).toMatchObject({ changed: 1, added: 1, removed: 1 });
+    expect(res.items.find((i) => i.title === '2학년 수련회')).toMatchObject({ start: '2027-09-27', end: '2027-09-29', status: 'ok', reason: '시트에서 고침' });
+    expect(res.items.some((i) => i.title === '과학의 날 행사')).toBe(true);
+    expect(() => applyPlanRows(plan.items, [['아무', '표']], 2027)).toThrow('머리글');
+  });
+
+  it('.ics로 내보낸 일정을 다시 읽으면 같다', () => {
+    const one = plan.items.filter((i) => !i.series).slice(0, 5);
+    const back = parseICS(toICS(one, '1차안'), '2028-02-28');
+    expect(back.map((e) => [e.title, e.start, e.end])).toEqual(one.map((i) => [i.title, i.start, i.end]));
+  });
+
+  it('AI 제안을 검사하고 고른 것만 적용한다', () => {
+    const camp = at('2학년 수련회')[0];
+    const ctx = JSON.parse(planContext(plan.items, plan.terms, 2027));
+    expect(ctx.일정.some((i: { id: string }) => i.id === camp.id)).toBe(true);
+    expect(ctx.매주반복[0]).toContain('교직원 회의');
+    const checked = checkOps(
+      [
+        { op: 'move', id: camp.id, title: camp.title, start: '2027-05-17', end: '2027-05-19', reason: '5월 셋째 주' },
+        { op: 'move', id: camp.id, title: camp.title, start: '2027-05-05', end: '2027-05-07', reason: '어린이날' },
+        { op: 'move', id: camp.id, title: camp.title, start: '2027-05-12', end: '2027-05-14', reason: '가운데 공휴일' },
+        { op: 'move', id: camp.id, title: camp.title, start: '2027-05-11', end: '2027-05-11', reason: '하루로' },
+        { op: 'move', id: 'nope', title: 'x', start: '2027-05-11', end: '2027-05-11', reason: '' },
+        { op: 'add', id: '', title: '과학의 날 행사3-4', start: '2027-04-21', end: '2027-04-21', reason: '과학의 날' },
+        { op: 'add', id: '', title: '토요 행사', start: '2027-04-24', end: '2027-04-24', reason: '' },
+        { op: 'remove', id: at('체육대회')[0].id, title: '체육대회', start: '', end: '', reason: '올해는 안 함' },
+      ],
+      plan.items,
+      plan.terms,
+      2027,
+    );
+    expect(checked.map((c) => c.problem ?? 'ok')).toEqual(['ok', '공휴일(어린이날)', '공휴일(부처님오신날)', '일정 날 수가 바뀜', '없는 일정 번호', 'ok', '주말', 'ok']);
+    const next = applyOps(plan.items, checked);
+    expect(next.find((i) => i.id === camp.id)).toMatchObject({ start: '2027-05-17', end: '2027-05-19', status: 'ok' });
+    expect(next.some((i) => i.title === '과학의 날 행사3-4' && i.kind === 'periods')).toBe(true);
+    expect(next.some((i) => i.title === '체육대회')).toBe(false);
+    expect(next.some((i) => i.title === '토요 행사')).toBe(false);
   });
 });
 

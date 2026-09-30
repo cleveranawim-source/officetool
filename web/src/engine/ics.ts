@@ -125,3 +125,30 @@ function safeAtob(v: string): string | null {
     return null;
   }
 }
+
+/** 하루 종일 일정들을 .ics 글로 (구글 캘린더 "가져오기"용) */
+export function toICS(events: { id: string; title: string; start: string; end: string; description?: string }[], calName: string): string {
+  const esc = (t: string) => t.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+  const day = (d: string) => d.replace(/-/g, '');
+  const next = (d: string) => {
+    const x = new Date(`${d}T00:00:00Z`);
+    x.setUTCDate(x.getUTCDate() + 1);
+    return x.toISOString().slice(0, 10);
+  };
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//gyomufit//plan//KO', 'CALSCALE:GREGORIAN', `X-WR-CALNAME:${esc(calName)}`];
+  for (const e of events) {
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${e.id}-${day(e.start)}@gyomufit`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${day(e.start)}`,
+      `DTEND;VALUE=DATE:${day(next(e.end))}`,
+      `SUMMARY:${esc(e.title)}`,
+      ...(e.description ? [`DESCRIPTION:${esc(e.description)}`] : []),
+      'END:VEVENT',
+    );
+  }
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}

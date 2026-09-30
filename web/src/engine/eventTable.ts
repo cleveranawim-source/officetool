@@ -17,14 +17,15 @@ export interface EventTableResult {
  * 시트에서 붙여넣거나 엑셀에서 읽은 학사일정 표. 모양을 보고 목록형·달력형을 알아서 고른다.
  * year는 학년도, semester는 학기 (2학기의 1~2월 날짜는 다음 해로).
  */
-export function readEventTable(input: string | string[][], opts: { year: number; semester: 1 | 2 }): EventTableResult {
+export function readEventTable(input: string | string[][], opts: { year: number; semester: 1 | 2; wholeYear?: boolean }): EventTableResult {
   const rows = typeof input === 'string' ? splitRows(input) : input.map((r) => r.map((c) => String(c ?? '')));
   if (looksLikeCalendarGrid(rows)) {
-    const g = parseCalendarGrid(rows, opts);
+    // 한 학년도 전체는 3월부터 차례로 읽는다
+    const g = parseCalendarGrid(rows, { year: opts.year, semester: opts.wholeYear ? 1 : opts.semester });
     return { format: 'grid', events: g.events, days: g.days, first: g.first, last: g.last };
   }
   const events = parseEventRows(rows, opts.year).map((e) =>
-    opts.semester === 2 && Number(e.start.slice(5, 7)) < 3
+    (opts.semester === 2 || opts.wholeYear) && Number(e.start.slice(5, 7)) < 3
       ? { ...e, start: `${opts.year + 1}${e.start.slice(4)}`, end: `${opts.year + 1}${e.end.slice(4)}` }
       : e,
   );

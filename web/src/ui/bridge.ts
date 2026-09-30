@@ -35,6 +35,7 @@ export const server = {
   fetchPublicIcs: (calendarId: string) => call<string>('fetchPublicIcs', calendarId),
   readTimetableSheet: (url: string) => call<string>('readTimetableSheet', url),
   fetchNeis: (url: string) => call<string>('fetchNeis', url),
+  createPlanSheet: (title: string, rows: string[][]) => call<string>('createPlanSheet', title, rows),
   readEventSheets: (url: string) => call<{ sheet: string; rows: string[][] }[]>('readEventSheets', url),
 };
 

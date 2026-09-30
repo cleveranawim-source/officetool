@@ -16,7 +16,7 @@ function toISO(y: number, m: number, d: number): string | null {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-function parseDateCell(cell: string, year: number): { start: string; end: string } | null {
+export function parseDateCell(cell: string, year: number): { start: string; end: string } | null {
   const parts = cell.split(/\s*[~∼]\s*/);
   const one = (s: string, base?: string): string | null => {
     const f = s.match(FULL);
