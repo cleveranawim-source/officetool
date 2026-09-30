@@ -5,6 +5,11 @@ import type { EventKind } from '../engine/types';
 /* ---------- 아이콘 (선 굵기 1.6, currentColor) ---------- */
 const P = { fill: 'none', stroke: 'currentColor', 'stroke-width': 1.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' } as const;
 export const Icon = {
+  house: () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" {...P}>
+      <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z" />
+    </svg>
+  ),
   home: () => (
     <svg width="18" height="18" viewBox="0 0 24 24" {...P}>
       <rect x="3" y="3" width="7" height="9" rx="1.5" />

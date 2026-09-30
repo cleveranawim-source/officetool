@@ -568,3 +568,50 @@ button.yd:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; 
 .ai-ops b { font-weight: 600; font-size: 13px; }
 .ai-ops li.bad { opacity: 0.6; }
 .ai-ops li.bad label { cursor: default; }
+
+/* ---------- 교무핏 홈 ---------- */
+.brand-link { color: inherit; text-decoration: none; border-radius: 10px; }
+.brand-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.home-hero { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 4px; }
+.home-hero h1 { margin: 0; font-size: clamp(32px, 4.6vw, 44px); font-weight: 700; letter-spacing: -0.035em; line-height: 1.1; }
+.home-hero p { margin: 0; max-width: 60ch; font-size: 16px; line-height: 1.6; color: var(--ink-2); }
+
+.tool-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.tool-card {
+  display: flex; flex-direction: column; gap: 10px; align-items: flex-start; padding: 20px 20px 18px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+}
+.tool-card p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+.tool-card .btn { margin-top: auto; }
+.tool-head { display: flex; align-items: center; gap: 10px; }
+.tool-head h2 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+.tool-icon { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); }
+.tool-status { font-size: 13px; font-weight: 500; padding: 7px 10px; border-radius: 8px; background: var(--surface-2); color: var(--ink); }
+.tool-status.alert { background: var(--warn-soft); }
+.tool-card.soon { background: transparent; border-style: dashed; }
+.tool-card.soon .tool-icon { background: var(--surface-2); color: var(--muted); }
+.tool-card.soon h2 { color: var(--ink-2); }
+
+.flow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.flow li { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 8px; border-top: 1px solid var(--line); }
+.flow li:first-child { border-top: 0; }
+.flow li.now { background: var(--accent-soft); border-radius: 10px; border-top-color: transparent; }
+.flow li.now + li { border-top-color: transparent; }
+.flow-when { font-size: 12px; font-weight: 600; color: var(--muted); }
+.flow a { display: flex; flex-direction: column; gap: 2px; color: var(--ink); text-decoration: none; }
+.flow a:hover b { text-decoration: underline; }
+.flow b { font-weight: 600; font-size: 14px; }
+
+.data-list { margin: 0; display: flex; flex-direction: column; }
+.data-list > div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.data-list > div:first-child { border-top: 0; }
+.data-list dt { color: var(--muted); font-size: 13px; }
+.data-list dd { margin: 0; }
+.home-foot { margin: 0; }
+.home-foot a { color: var(--accent); }
+
+@media (max-width: 720px) {
+  .tool-grid { grid-template-columns: minmax(0, 1fr); }
+}
+a.btn { text-decoration: none; color: inherit; display: inline-flex; align-items: center; }
+a.btn.primary { color: var(--accent-ink); }

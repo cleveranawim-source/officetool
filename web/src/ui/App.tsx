@@ -5,6 +5,7 @@ import { CalendarView } from './CalendarView';
 import { CellDrawer } from './CellDrawer';
 import { DataView } from './DataView';
 import { Icon, TipProvider } from './parts';
+import { HomeApp } from './HomeApp';
 import { PlanApp } from './PlanApp';
 import { useModel, type Model } from './store';
 import { AppSwitch, appFromHash, SuiteBrand, type AppId } from './suite';
@@ -37,6 +38,7 @@ export function App() {
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
+  if (app === 'home') return <HomeApp m={m} />;
   return app === 'plan' ? <PlanApp m={m} /> : <SisuApp m={m} />;
 }
 
