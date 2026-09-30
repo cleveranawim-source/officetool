@@ -10,6 +10,7 @@ import { anonymizeTeachers } from './privacy';
 import { parseEventList } from './eventList';
 import { looksLikeCalendarGrid, parseCalendarGrid } from './calendarGrid';
 import { readEventTable, termOf } from './eventTable';
+import { DEFAULT_SWAP_RULES, describePick, findOptions, indexTeachers, needsFor, type SwapContext } from './swap';
 import { applyOps, checkOps, planContext } from './planAI';
 import { applyPlanRows, planToRows, toCSV } from './planSheet';
 import { detectTerms, makePlan, planConflicts, planStats, suggestTerms } from './planner';
@@ -705,6 +706,66 @@ describe('학사일정 1차안', () => {
     expect(next.some((i) => i.title === '과학의 날 행사3-4' && i.kind === 'periods')).toBe(true);
     expect(next.some((i) => i.title === '체육대회')).toBe(false);
     expect(next.some((i) => i.title === '토요 행사')).toBe(false);
+  });
+});
+
+describe('시간표 교체 (베타)', () => {
+  const S = (x: string) => ({ s: x.slice(0, -1), t: x.slice(-1) });
+  const W = (rows: string[][]) => rows.map((r) => r.map(S));
+  const tt: Timetable = {
+    school: '테스트',
+    term: 't',
+    days: [3, 3, 3, 3, 3],
+    classes: [
+      { id: '1-1', grade: 1, homeroom: 'D', week: W([['국어A', '수학B', '영어C'], ['수학B', '국어A', '과학D'], ['영어C', '과학D', '국어A'], ['과학D', '영어C', '수학B'], ['국어A', '과학D', '영어C']]) },
+      { id: '1-2', grade: 1, week: W([['수학B', '영어C', '과학D'], ['국어A', '과학D', '영어C'], ['수학B', '국어A', '영어C'], ['영어C', '수학B', '국어A'], ['과학D', '국어A', '수학B']]) },
+      { id: '2-1', grade: 2, week: W(Array.from({ length: 5 }, () => ['국어E', '체육F', '미술G'])) },
+    ],
+  };
+  const idx = indexTeachers(tt);
+  const absA = { id: 'a', teacher: 'A', date: '2026-10-12', periods: [], reason: '출장' };
+  const ctx = (over: Partial<SwapContext> = {}): SwapContext => ({
+    tt, idx, rules: DEFAULT_SWAP_RULES, absences: [absA], picks: [], dayOpen: () => true, coverCount: new Map(), ...over,
+  });
+
+  it('빠지는 선생님의 그날 수업을 찾는다', () => {
+    expect(needsFor(tt, idx, absA).map((n) => `${n.period} ${n.cls} ${n.subject}`)).toEqual(['1 1-1 국어']);
+    expect(needsFor(tt, idx, { ...absA, date: '2026-10-13' }).map((n) => `${n.period} ${n.cls}`)).toEqual(['1 1-2', '2 1-1']);
+  });
+
+  it('교체: 같은 반 다른 수업과 맞바꾸되, 두 선생님이 모두 비어 있어야 한다', () => {
+    const [need] = needsFor(tt, idx, absA);
+    const { swaps } = findOptions(need, ctx());
+    // 월 1교시 국어(A) ↔ 화 3교시 과학(D): D는 월 1교시 비고, A는 화 3교시 빔
+    expect(swaps[0]).toMatchObject({ teacher: 'D', subject: '과학', date: '2026-10-13', period: 3 });
+    // 같은 날(월)은 A가 하루 종일 빠져서 안 됨, 수학B는 월 1교시에 1-2 수업이 있어 안 됨
+    expect(swaps.some((x) => x.date === '2026-10-12' || x.teacher === 'B')).toBe(false);
+    // 화요일이 행사로 막히면 다음 후보로
+    expect(findOptions(need, ctx({ dayOpen: (d) => d !== '2026-10-13' })).swaps[0].date).toBe('2026-10-14');
+    // 연강 2시간 제한이면 화 3교시(A 화 1·2교시 수업) 교체는 빠짐
+    const strict = findOptions(need, ctx({ rules: { ...DEFAULT_SWAP_RULES, maxRun: 2 } })).swaps;
+    expect(strict.some((x) => x.date === '2026-10-13' && x.period === 3)).toBe(false);
+  });
+
+  it('보강: 비어 있는 선생님을 담임·같은 학년·보강 횟수 순으로', () => {
+    const [need] = needsFor(tt, idx, absA);
+    const { covers } = findOptions(need, ctx());
+    expect(covers.map((c) => c.teacher)).toEqual(['D', 'C', 'F', 'G']);
+    expect(covers[0].notes).toContain('담임');
+    // D가 보강을 여러 번 했으면 뒤로
+    const balanced = findOptions(need, ctx({ coverCount: new Map([['D', 3]]) })).covers.map((c) => c.teacher);
+    expect(balanced.indexOf('D')).toBeGreaterThan(balanced.indexOf('C'));
+  });
+
+  it('고른 결보강을 다음 찾기에 반영한다', () => {
+    const [need] = needsFor(tt, idx, absA);
+    const pick = { need, option: { kind: 'cover' as const, teacher: 'D', notes: [] } };
+    // B도 월 1교시(1-2)에 빠지면, D는 이미 보강으로 들어가 후보에서 빠진다
+    const absB = { id: 'b', teacher: 'B', date: '2026-10-12', periods: [1], reason: '연가' };
+    const [needB] = needsFor(tt, idx, absB);
+    const covers = findOptions(needB, ctx({ absences: [absA, absB], picks: [pick] })).covers.map((c) => c.teacher);
+    expect(covers).not.toContain('D');
+    expect(describePick(pick)).toBe('10/12(월) 1교시 1-1 국어(A) → 보강: D');
   });
 });
 

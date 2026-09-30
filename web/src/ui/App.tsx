@@ -7,6 +7,7 @@ import { DataView } from './DataView';
 import { Icon, TipProvider } from './parts';
 import { HomeApp } from './HomeApp';
 import { PlanApp } from './PlanApp';
+import { SwapApp } from './SwapApp';
 import { useModel, type Model } from './store';
 import { AppSwitch, appFromHash, SuiteBrand, type AppId } from './suite';
 import { Setup } from './Setup';
@@ -39,6 +40,7 @@ export function App() {
     return () => window.removeEventListener('hashchange', on);
   }, []);
   if (app === 'home') return <HomeApp m={m} />;
+  if (app === 'swap') return <SwapApp m={m} />;
   return app === 'plan' ? <PlanApp m={m} /> : <SisuApp m={m} />;
 }
 

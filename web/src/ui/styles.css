@@ -615,3 +615,33 @@ button.yd:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; 
 }
 a.btn { text-decoration: none; color: inherit; display: inline-flex; align-items: center; }
 a.btn.primary { color: var(--accent-ink); }
+.apps .beta { margin-left: auto; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+
+/* ---------- 시간표 교체 (베타) ---------- */
+.swap-form { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.8fr); gap: 10px; }
+.swap-periods { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.swap-periods legend { padding: 0; margin-bottom: 6px; }
+.switch-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--line-strong); border-radius: 999px; font-size: 13px; cursor: pointer; }
+.switch-chip:has(input:checked) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.swap-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.swap-list > li { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); align-items: start; }
+.swap-list > li:first-child { border-top: 0; }
+.sw-slot { display: flex; flex-direction: column; gap: 2px; }
+.sw-slot span { font-size: 13px; color: var(--ink-2); }
+.sw-opts { display: flex; flex-direction: column; gap: 8px; }
+.sw-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sw-row > .small { width: 30px; }
+.opt {
+  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 10px; border-radius: 9px; cursor: pointer;
+  border: 1px solid var(--line-strong); background: var(--surface); font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); text-align: left;
+}
+.opt em { font-style: normal; font-weight: 400; font-size: 11px; color: var(--ink-2); }
+.opt.swap { border-color: color-mix(in srgb, var(--good) 45%, var(--line)); }
+.opt:hover { background: var(--surface-2); }
+.opt:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.sw-picked { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.swap-list > li.done .sw-slot b { color: var(--good); }
+@media (max-width: 720px) {
+  .swap-form { grid-template-columns: minmax(0, 1fr); }
+  .swap-list > li { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+}

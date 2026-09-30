@@ -1,6 +1,7 @@
 import { fmtShort } from '../engine/dates';
 import { Icon, Panel } from './parts';
 import { usePlanStore } from './planStore';
+import { useSwapStore } from './swapStore';
 import type { Model } from './store';
 import { AppSwitch, SUITE_NAME, SuiteBrand } from './suite';
 
@@ -21,6 +22,8 @@ export function HomeApp({ m }: { m: Model }) {
     : plan.lastEvents
       ? `작년 일정 ${plan.lastEvents.length}건을 읽었습니다. 새 학년도 기본값을 정하면 1차안이 나옵니다.`
       : null;
+  const swap = useSwapStore().s;
+  const swapStatus = swap.absences.length ? `결보강 ${swap.absences.length}건 진행 중 · 정한 수업 ${swap.picks.length}시간` : null;
   const sisuStatus = sisuReady
     ? `${m.timetable.school} ${m.timetable.term} · 시험 전 최대 격차 ${b.maxSpread}시간 · 편제 부족 ${b.deficitHours}시간`
     : sisuDemo
@@ -77,7 +80,15 @@ export function HomeApp({ m }: { m: Model }) {
             href="#dashboard"
             action={sisuReady ? '결과 보기' : sisuDemo ? '예시 계속 보기' : '시작하기'}
           />
-          <ToolCard icon={<Icon.swap />} name="시간표 교체" desc="출장·연가로 빠지는 수업(결보강), 수업 맞바꾸기, 행사 교시 이동을 학교 조건에 맞춰 찾고, 반간 시수 차이까지 함께 봅니다." soon />
+          <ToolCard
+            icon={<Icon.swap />}
+            name="시간표 교체"
+            beta
+            desc="출장·연가로 빠지는 수업을 교체(맞바꾸기) 먼저, 안 되면 보강할 선생님을 학교 조건에 맞춰 찾고 안내문까지 만듭니다."
+            status={swapStatus}
+            href="#swap"
+            action={swapStatus ? '이어서 보기' : '결보강 찾기'}
+          />
           <ToolCard icon={<Icon.flag />} name="고교학점제 이수 점검" desc="과목마다 수업 횟수 3분의 2 이수 기준을 학사일정과 함께 미리 점검합니다." soon />
         </section>
 
@@ -144,6 +155,7 @@ function ToolCard({
   href,
   action,
   soon,
+  beta,
 }: {
   icon: preact.JSX.Element;
   name: string;
@@ -153,6 +165,7 @@ function ToolCard({
   href?: string;
   action?: string;
   soon?: boolean;
+  beta?: boolean;
 }) {
   return (
     <article class={`tool-card ${soon ? 'soon' : ''}`}>
@@ -160,6 +173,7 @@ function ToolCard({
         <span class="tool-icon">{icon}</span>
         <h2>{name}</h2>
         {soon && <span class="chip plain">준비 중</span>}
+        {beta && <span class="chip warn">베타</span>}
       </div>
       <p>{desc}</p>
       {status && <div class={`tool-status ${alert ? 'alert' : ''}`}>{status}</div>}
