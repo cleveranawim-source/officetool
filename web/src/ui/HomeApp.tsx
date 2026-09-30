@@ -77,7 +77,7 @@ export function HomeApp({ m }: { m: Model }) {
             href="#dashboard"
             action={sisuReady ? '결과 보기' : sisuDemo ? '예시 계속 보기' : '시작하기'}
           />
-          <ToolCard icon={<Icon.user />} name="결보강 배정" desc="선생님이 빠지는 날, 시수와 시간표를 보고 보강할 선생님을 추천합니다." soon />
+          <ToolCard icon={<Icon.swap />} name="시간표 교체" desc="출장·연가로 빠지는 수업(결보강), 수업 맞바꾸기, 행사 교시 이동을 학교 조건에 맞춰 찾고, 반간 시수 차이까지 함께 봅니다." soon />
           <ToolCard icon={<Icon.flag />} name="고교학점제 이수 점검" desc="과목마다 수업 횟수 3분의 2 이수 기준을 학사일정과 함께 미리 점검합니다." soon />
         </section>
 
